@@ -32,18 +32,15 @@ Scan data never leaves the device: it goes into the WebView, not to a server.
 
 | | |
 |---|---|
-| Flutter | 3.3+ (built with 3.44.6) |
+| Flutter | 3.44+ (built with 3.44.6) |
 | Android | minSdk 24, compileSdk 36 |
 | iOS | 14.0+ |
 | WebView | `webview_flutter` 4.14+ (pulled in by this plugin) |
 
 ## Install
 
-```yaml
-dependencies:
-  iwayplus_scanner:
-    git:
-      url: https://github.com/iisthehimanshu/iwayplus-scanner.git
+```bash
+flutter pub add iwayplus_scanner
 ```
 
 ## Permissions
@@ -220,8 +217,7 @@ plugin and `react-native-scanner`.
 
 Proprietary — see [LICENSE](LICENSE). Apps that integrate an Iwayplus
 navigation service may install and use the plugin unmodified; anything else
-needs written consent from Iwayplus. The package is distributed through this
-repository only, so `publish_to: none` keeps it off pub.dev.
+needs written consent from Iwayplus.
 
 ## Example
 

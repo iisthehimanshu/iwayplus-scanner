@@ -1,12 +1,16 @@
 name: iwayplus_scanner
 description: "Native BLE, GPS and heading scanning for Flutter apps, relayed into the Iwayplus navigation page running in a WebView."
 version: 0.1.0
-publish_to: none
-homepage:
+repository: https://github.com/iisthehimanshu/iwayplus-scanner
+issue_tracker: https://github.com/iisthehimanshu/iwayplus-scanner/issues
+topics:
+  - bluetooth
+  - indoor-navigation
+  - webview
 
 environment:
-  sdk: ^3.12.2
-  flutter: '>=3.3.0'
+  sdk: ^3.12.0
+  flutter: '>=3.44.0'
 
 dependencies:
   flutter:
