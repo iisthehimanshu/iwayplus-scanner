@@ -1,6 +1,7 @@
 name: iwayplus_scanner
 description: "Native BLE, GPS and heading scanning for Flutter apps, relayed into the Iwayplus navigation page running in a WebView."
 version: 0.1.0
+publish_to: none
 homepage:
 
 environment:

@@ -11,7 +11,7 @@ Native BLE advertisement, GPS and compass scanning for a Flutter host app,
 relayed into the Iwayplus navigation page running in a WebView.
                        DESC
   s.homepage         = 'https://iwayplus.in'
-  s.license          = { :file => '../LICENSE' }
+  s.license          = { :type => 'Proprietary', :file => '../LICENSE' }
   s.author           = { 'Iwayplus' => 'support@iwayplus.in' }
   s.source           = { :path => '.' }
   s.source_files = 'iwayplus_scanner/Sources/iwayplus_scanner/**/*'

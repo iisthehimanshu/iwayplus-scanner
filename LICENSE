@@ -1,1 +1,31 @@
-TODO: Add your license here.
+Copyright (c) 2026 Iwayplus. All rights reserved.
+
+This software is proprietary and confidential.
+
+GRANT OF USE
+
+Permission is granted, free of charge, to any person or organisation
+obtaining a copy of this package from its Iwayplus source repository, to
+install it and use it unmodified as part of an application that integrates
+an Iwayplus navigation service.
+
+RESTRICTIONS
+
+Except as expressly permitted above, no part of this software may be
+reproduced, modified, adapted, reverse-engineered, redistributed,
+sublicensed, or used to create derivative works, in whole or in part,
+without the prior written consent of Iwayplus.
+
+Use of this package with the Iwayplus navigation service is additionally
+governed by the commercial agreement between Iwayplus and the licensee.
+This licence grants no rights to that service, to venue data, or to any
+Iwayplus trademark.
+
+NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+IWAYPLUS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

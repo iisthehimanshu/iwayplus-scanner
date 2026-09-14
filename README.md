@@ -216,6 +216,13 @@ copies: they must behave the same as `src/bridgeScript.ts` and `src/types.ts`.
 One consequence of the shared package name: a single app cannot link both this
 plugin and `react-native-scanner`.
 
+## License
+
+Proprietary — see [LICENSE](LICENSE). Apps that integrate an Iwayplus
+navigation service may install and use the plugin unmodified; anything else
+needs written consent from Iwayplus. The package is distributed through this
+repository only, so `publish_to: none` keeps it off pub.dev.
+
 ## Example
 
 `example/` is the same smoke test as the React Native ScannerTestApp: a
