@@ -229,3 +229,11 @@ needs written consent from Iwayplus.
 cd example
 flutter run --dart-define=IWAYPLUS_API_KEY=YOUR_API_KEY
 ```
+
+To test a navigation_sdk web build served locally (Android, debug build):
+
+```bash
+adb reverse tcp:8130 tcp:8130
+flutter run --dart-define=IWAYPLUS_API_KEY=YOUR_DEV_API_KEY \
+  --dart-define=IWAYPLUS_MAP_URL=http://localhost:8130/iwaymaps/
+```

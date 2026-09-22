@@ -197,14 +197,20 @@ public final class IwayplusScannerImpl: NSObject,
     rssi RSSI: NSNumber
   ) {
     guard isScanningBle else { return }
-    guard buffer.count < maxBufferedReadings else {
-      dropped += 1
-      return
-    }
 
     let name = peripheral.name
       ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String
       ?? ""
+
+    // Tested before the buffer cap so that advertisements the consumer would
+    // never look at cannot inflate `dropped`, which is reported as a "the
+    // venue is denser than your buffer" tuning signal.
+    guard Self.isIwayplusBeacon(name) else { return }
+
+    guard buffer.count < maxBufferedReadings else {
+      dropped += 1
+      return
+    }
 
     // The first two bytes are the company identifier, which the Android
     // `manufacturerSpecificData` accessor already strips. Dropping them here
@@ -224,6 +230,17 @@ public final class IwayplusScannerImpl: NSObject,
       "timestamp": Int(Date().timeIntervalSince1970 * 1000),
       "manufacturerHex": manufacturerHex,
     ])
+  }
+
+  /// Advertised-name prefix every IwayPlus beacon carries.
+  static let iwayplusNamePrefix = "IW"
+
+  /// Whether an advertisement came from an IwayPlus beacon.
+  ///
+  /// Matched case-insensitively, to stay identical to the Android scanner and
+  /// to the positioning engine, which compares on a lower-cased name.
+  static func isIwayplusBeacon(_ name: String) -> Bool {
+    name.lowercased().hasPrefix(iwayplusNamePrefix.lowercased())
   }
 
   private func flush() {

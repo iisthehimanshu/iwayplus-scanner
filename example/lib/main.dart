@@ -8,6 +8,14 @@
 /// Run with the credentials the hosted page requires:
 /// `flutter run --dart-define=IWAYPLUS_API_KEY=KEY --dart-define=IWAYPLUS_VENUE=VENUE`
 /// (the venue defaults to Iwayplus).
+///
+/// To test a navigation_sdk web build that isn't deployed yet, point the
+/// bridge tab at a local server with
+/// `--dart-define=IWAYPLUS_MAP_URL=http://localhost:8130/iwaymaps/` and, on
+/// Android, `adb reverse tcp:8130 tcp:8130`. A localhost page uses the dev
+/// backend, so pass a dev API key.
+///
+/// `--dart-define=IWAYPLUS_BUILDING_IDS=ID1,ID2` adds `buildingIds` to the link.
 library;
 
 import 'dart:async';
@@ -20,6 +28,14 @@ const _venue = String.fromEnvironment(
   'IWAYPLUS_VENUE',
   defaultValue: 'Iwayplus',
 );
+const _mapUrl = String.fromEnvironment(
+  'IWAYPLUS_MAP_URL',
+  defaultValue: 'https://maps.iwayplus.in/iwaymaps/',
+);
+
+/// Optional comma-separated building ids that limit the venue to those
+/// buildings. Left out of the link when unset.
+const _buildingIds = String.fromEnvironment('IWAYPLUS_BUILDING_IDS');
 
 const _ink = Color(0xFF0B1020);
 const _panel = Color(0xFF141B2E);
@@ -334,9 +350,10 @@ class _BridgePanelState extends State<_BridgePanel> {
   String _lastCommand = '-';
 
   static final String _url =
-      'https://maps.iwayplus.in/iwaymaps/'
+      '$_mapUrl'
       '?venueName=${Uri.encodeQueryComponent(_venue)}'
-      '&apiKey=${Uri.encodeQueryComponent(_apiKey)}';
+      '&apiKey=${Uri.encodeQueryComponent(_apiKey)}'
+      '${_buildingIds.isEmpty ? '' : '&buildingIds=${Uri.encodeQueryComponent(_buildingIds)}'}';
 
   @override
   Widget build(BuildContext context) {

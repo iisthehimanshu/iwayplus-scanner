@@ -19,10 +19,11 @@ import org.json.JSONObject
 /**
  * Batched BLE advertisement scanning.
  *
- * Deliberately unfiltered: every advertisement is forwarded with its
- * manufacturer data attached, and the decision about which advertisers matter
- * is made downstream. Filtering here would mean a host-app release every time
- * a venue is commissioned with different beacon hardware.
+ * Filtered to IwayPlus beacons by advertised-name prefix ([IWAYPLUS_NAME_PREFIX]),
+ * and nothing else. That prefix is a property of the hardware rather than of a
+ * venue, so this still does not tie the host app to a venue's beacon layout:
+ * which IW beacons matter, and what they mean, is decided downstream. Every
+ * advertisement that survives is forwarded with its manufacturer data attached.
  */
 class BleScanner(
   private val context: Context,
@@ -114,6 +115,11 @@ class BleScanner(
 
     scanCallback = object : ScanCallback() {
       override fun onScanResult(callbackType: Int, result: ScanResult) {
+        val name = nameOf(result)
+        // Tested before the buffer cap so that advertisements the consumer
+        // would never look at cannot inflate `dropped`, which is reported as
+        // a "the venue is denser than your buffer" tuning signal.
+        if (!isIwayplusBeacon(name)) return
         if (buffer.size >= config.maxBufferedReadings) {
           // Reported to the consumer rather than swallowed: a non-zero count
           // means the venue is denser than the configured cap, which is a
@@ -121,7 +127,7 @@ class BleScanner(
           dropped++
           return
         }
-        buffer.add(readingOf(result))
+        buffer.add(readingOf(result, name))
       }
 
       override fun onScanFailed(errorCode: Int) {
@@ -137,6 +143,10 @@ class BleScanner(
       .setReportDelay(0L)
       .build()
 
+    // No radio-level filter: `ScanFilter` matches a device name exactly, not
+    // by prefix, so the "IW" test lives in the callback above. The radio still
+    // reports every advertiser; what this saves is the JSON build, the channel
+    // hop and the consumer's parse — not scan power.
     try {
       scanner.startScan(emptyList(), settings, scanCallback)
     } catch (error: SecurityException) {
@@ -156,9 +166,22 @@ class BleScanner(
     }
   }
 
-  private fun readingOf(result: ScanResult): JSONObject {
+  private fun nameOf(result: ScanResult): String =
+    result.scanRecord?.deviceName
+      ?: runCatching { result.device.name }.getOrNull()
+      ?: ""
+
+  /**
+   * Whether an advertisement came from an IwayPlus beacon.
+   *
+   * Matched case-insensitively, to stay identical to the React Native scanner
+   * and to the positioning engine, which compares on a lower-cased name.
+   */
+  private fun isIwayplusBeacon(name: String): Boolean =
+    name.startsWith(IWAYPLUS_NAME_PREFIX, ignoreCase = true)
+
+  private fun readingOf(result: ScanResult, name: String): JSONObject {
     val record = result.scanRecord
-    val name = record?.deviceName ?: runCatching { result.device.name }.getOrNull() ?: ""
 
     var manufacturerHex = ""
     val manufacturerData = record?.manufacturerSpecificData
@@ -235,6 +258,9 @@ class BleScanner(
     const val TAG = "IwayplusBleScanner"
     const val RESTART_GAP_MS = 100L
     val HEX = "0123456789ABCDEF".toCharArray()
+
+    /** Advertised-name prefix every IwayPlus beacon carries. */
+    const val IWAYPLUS_NAME_PREFIX = "IW"
   }
 
   /**

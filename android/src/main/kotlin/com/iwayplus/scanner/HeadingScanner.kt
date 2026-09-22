@@ -53,10 +53,16 @@ class HeadingScanner(
       return
     }
     lastHeading = Float.NaN
+    // SENSOR_DELAY_UI (60ms, ~16.7Hz) rather than SENSOR_DELAY_GAME (20ms,
+    // 50Hz). A walking user's heading does not change anywhere near fast
+    // enough to need 50 samples a second, and every sample costs a sensor
+    // wakeup plus the maths below before `headingFilterDeg` even gets to
+    // discard it. The rate is a hint, not a contract: Android is free to
+    // deliver faster, which is why the angular filter stays.
     isScanning = sensorManager.registerListener(
       listener,
       sensor,
-      SensorManager.SENSOR_DELAY_GAME,
+      SensorManager.SENSOR_DELAY_UI,
     )
   }
 

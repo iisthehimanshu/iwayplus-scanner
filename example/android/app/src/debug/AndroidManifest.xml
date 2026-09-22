@@ -4,4 +4,8 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Debug builds only: lets the bridge tab load a local http:// server
+         (IWAYPLUS_MAP_URL). Release builds keep Android's cleartext block. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

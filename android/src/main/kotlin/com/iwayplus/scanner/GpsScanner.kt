@@ -12,7 +12,16 @@ import android.util.Log
 import androidx.core.app.ActivityCompat
 import org.json.JSONObject
 
-/** Platform location updates, forwarded unsmoothed. */
+/**
+ * Platform location updates, forwarded unsmoothed.
+ *
+ * GNSS only. The network provider is deliberately not registered: it bills
+ * itself as a location fix but is derived from nearby cell towers and Wi-Fi
+ * access points, so indoors it reports the building rather than the user and
+ * at an accuracy the consumer cannot act on. Indoor position comes from the
+ * beacons, which are the authority once the user is inside, and a coarse
+ * network fix competing with them is noise rather than a fallback.
+ */
 class GpsScanner(
   private val context: Context,
   private val sink: ScannerSink,
@@ -40,19 +49,13 @@ class GpsScanner(
   fun powerState(): String = when {
     manager == null -> "unsupported"
     !hasPermission() -> "unauthorized"
-    isAnyProviderEnabled() -> "on"
+    isGpsEnabled() -> "on"
     else -> "off"
   }
 
-  private fun isAnyProviderEnabled(): Boolean {
-    val gps = runCatching {
-      manager?.isProviderEnabled(LocationManager.GPS_PROVIDER)
-    }.getOrNull() ?: false
-    val network = runCatching {
-      manager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-    }.getOrNull() ?: false
-    return gps || network
-  }
+  private fun isGpsEnabled(): Boolean = runCatching {
+    manager?.isProviderEnabled(LocationManager.GPS_PROVIDER)
+  }.getOrNull() ?: false
 
   @SuppressLint("MissingPermission")
   fun start() {
@@ -69,39 +72,22 @@ class GpsScanner(
       return
     }
 
-    val gpsEnabled = runCatching {
-      manager.isProviderEnabled(LocationManager.GPS_PROVIDER)
-    }.getOrDefault(false)
-    val networkEnabled = runCatching {
-      manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-    }.getOrDefault(false)
-
-    if (!gpsEnabled && !networkEnabled) {
-      sink.emitError("NO_PROVIDER", "No location provider enabled")
+    // Reported as unavailable when GNSS specifically is off, rather than
+    // starting against a provider we no longer register and delivering
+    // nothing. A caller that is told "on" and then hears silence has no way
+    // to tell that apart from being somewhere without sky view.
+    if (!isGpsEnabled()) {
+      sink.emitError("NO_PROVIDER", "GPS provider is not enabled")
       return
     }
 
     try {
-      // Indoors the GPS provider often yields nothing at all, so the network
-      // provider is registered too when it is available — a coarse fix still
-      // anchors the venue and the floor guess, and the consumer weighs fixes
-      // by their reported accuracy.
-      if (gpsEnabled) {
-        manager.requestLocationUpdates(
-          LocationManager.GPS_PROVIDER,
-          config.gpsIntervalMs,
-          config.gpsDistanceFilterM,
-          listener,
-        )
-      }
-      if (networkEnabled) {
-        manager.requestLocationUpdates(
-          LocationManager.NETWORK_PROVIDER,
-          config.gpsIntervalMs,
-          config.gpsDistanceFilterM,
-          listener,
-        )
-      }
+      manager.requestLocationUpdates(
+        LocationManager.GPS_PROVIDER,
+        config.gpsIntervalMs,
+        config.gpsDistanceFilterM,
+        listener,
+      )
       isScanning = true
     } catch (error: SecurityException) {
       sink.emitError("PERMISSION_DENIED", "Location permission revoked")
@@ -139,8 +125,8 @@ class GpsScanner(
     override fun onProviderEnabled(provider: String) = Unit
 
     override fun onProviderDisabled(provider: String) {
-      if (!isAnyProviderEnabled()) {
-        sink.emitError("NO_PROVIDER", "Location providers disabled")
+      if (!isGpsEnabled()) {
+        sink.emitError("NO_PROVIDER", "GPS provider disabled")
       }
     }
   }

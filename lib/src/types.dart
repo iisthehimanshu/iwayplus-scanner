@@ -121,7 +121,10 @@ class ScannerEnvelope {
   final Map<String, dynamic> payload;
 }
 
-/// One BLE advertisement, forwarded verbatim and unfiltered.
+/// One BLE advertisement from an IwayPlus beacon, forwarded verbatim.
+///
+/// Only advertisements whose [name] starts with `IW` (case-insensitive) reach
+/// this class; the scan callback drops everything else on both platforms.
 class BleReading {
   const BleReading({
     required this.device,
