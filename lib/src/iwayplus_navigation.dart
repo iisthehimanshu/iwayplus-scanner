@@ -28,6 +28,7 @@ class IwayplusNavigation extends StatefulWidget {
     required this.url,
     this.config,
     this.autoRequestPermissions = true,
+    this.startSuspended = false,
     this.onClose,
     this.onCommand,
     this.onPermissionResult,
@@ -43,6 +44,16 @@ class IwayplusNavigation extends StatefulWidget {
   /// false if the app runs its own permission flow — but grant them before
   /// showing this widget either way.
   final bool autoRequestPermissions;
+
+  /// Start with scanning suspended (default false).
+  ///
+  /// For a host that pre-warms this page off screen: the page boots and asks
+  /// to scan long before anyone looks at it, and a request granted then would
+  /// hold the radios open behind a hidden view. Suspended, the streams the
+  /// page asks for are recorded but not started, so [resumeScanning] can begin
+  /// them the moment the map is actually shown — with no window in which they
+  /// ran unwatched.
+  final bool startSuspended;
 
   /// The page asked to be dismissed.
   final VoidCallback? onClose;
@@ -67,13 +78,41 @@ class IwayplusNavigationState extends State<IwayplusNavigation>
   /// stops them.
   final Set<ScannerStream> _running = {};
 
+  /// While true, streams the page asks for are recorded but not started.
+  late bool _suspended = widget.startSuspended;
+
   /// Reloads the page. Scanning state is kept; the page re-requests streams.
   Future<void> reload() => _controller.reload();
 
   /// Stops every stream without closing the page.
+  ///
+  /// Forgets what was running, so nothing resumes on its own. Use
+  /// [pauseScanning] when the page is only being hidden.
   Future<void> stopScanning() {
     _running.clear();
     return IwayplusScanner.stopAll();
+  }
+
+  /// Suspends the streams but remembers them, so [resumeScanning] can put the
+  /// page back exactly as it was.
+  ///
+  /// This is what a host needs when the map is kept alive off screen: a
+  /// pre-warmed page has booted and asked to scan long before anyone looks at
+  /// it, and it must not hold the radios open in the meantime. Deliberately
+  /// mirrors [didChangeAppLifecycleState], which already does this on every
+  /// backgrounding — which is why it keeps [_running] rather than clearing it.
+  Future<void> pauseScanning() {
+    _suspended = true;
+    if (_running.isEmpty) return Future<void>.value();
+    return IwayplusScanner.stop(_running);
+  }
+
+  /// Restarts whatever [pauseScanning] suspended. A no-op if the page never
+  /// started a stream.
+  Future<void> resumeScanning() {
+    _suspended = false;
+    if (_running.isEmpty) return Future<void>.value();
+    return IwayplusScanner.start(_running);
   }
 
   @override
@@ -175,7 +214,9 @@ class IwayplusNavigationState extends State<IwayplusNavigation>
       case 'start':
         final streams = _streamsOf(command);
         _running.addAll(streams);
-        unawaited(IwayplusScanner.start(streams));
+        // Recorded either way, so resuming restores exactly what the page
+        // asked for; only actually started when something is watching.
+        if (!_suspended) unawaited(IwayplusScanner.start(streams));
       case 'stop':
         final streams = _streamsOf(command);
         _running.removeAll(streams);
@@ -209,7 +250,9 @@ class IwayplusNavigationState extends State<IwayplusNavigation>
     if (_running.isEmpty) return;
     switch (state) {
       case AppLifecycleState.resumed:
-        unawaited(IwayplusScanner.start(_running));
+        // A suspended page stays suspended across backgrounding: coming back
+        // to the app is not the same as looking at the map.
+        if (!_suspended) unawaited(IwayplusScanner.start(_running));
       case AppLifecycleState.paused:
         unawaited(IwayplusScanner.stop(_running));
       default:
