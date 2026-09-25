@@ -5,10 +5,13 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanRecord
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -20,10 +23,12 @@ import org.json.JSONObject
  * Batched BLE advertisement scanning.
  *
  * Filtered to IwayPlus beacons by advertised-name prefix ([IWAYPLUS_NAME_PREFIX]),
- * and nothing else. That prefix is a property of the hardware rather than of a
- * venue, so this still does not tie the host app to a venue's beacon layout:
- * which IW beacons matter, and what they mean, is decided downstream. Every
- * advertisement that survives is forwarded with its manufacturer data attached.
+ * and nothing else, in hardware (see [scanFilters]) — only on Android 13+,
+ * where `ScanFilter` can match a prefix; older devices get every advertiser.
+ * That prefix is a property of the hardware rather than of a venue, so this
+ * still does not tie the host app to a venue's beacon layout: which IW beacons
+ * matter, and what they mean, is decided downstream. Every advertisement that
+ * survives is forwarded with its manufacturer data attached.
  */
 class BleScanner(
   private val context: Context,
@@ -67,7 +72,7 @@ class BleScanner(
   }
 
   fun hasPermission(): Boolean {
-    val needed = if (android.os.Build.VERSION.SDK_INT >= 31) {
+    val needed = if (Build.VERSION.SDK_INT >= 31) {
       Manifest.permission.BLUETOOTH_SCAN
     } else {
       Manifest.permission.ACCESS_FINE_LOCATION
@@ -115,11 +120,6 @@ class BleScanner(
 
     scanCallback = object : ScanCallback() {
       override fun onScanResult(callbackType: Int, result: ScanResult) {
-        val name = nameOf(result)
-        // Tested before the buffer cap so that advertisements the consumer
-        // would never look at cannot inflate `dropped`, which is reported as
-        // a "the venue is denser than your buffer" tuning signal.
-        if (!isIwayplusBeacon(name)) return
         if (buffer.size >= config.maxBufferedReadings) {
           // Reported to the consumer rather than swallowed: a non-zero count
           // means the venue is denser than the configured cap, which is a
@@ -127,7 +127,7 @@ class BleScanner(
           dropped++
           return
         }
-        buffer.add(readingOf(result, name))
+        buffer.add(readingOf(result, nameOf(result)))
       }
 
       override fun onScanFailed(errorCode: Int) {
@@ -143,15 +143,40 @@ class BleScanner(
       .setReportDelay(0L)
       .build()
 
-    // No radio-level filter: `ScanFilter` matches a device name exactly, not
-    // by prefix, so the "IW" test lives in the callback above. The radio still
-    // reports every advertiser; what this saves is the JSON build, the channel
-    // hop and the consumer's parse — not scan power.
     try {
-      scanner.startScan(emptyList(), settings, scanCallback)
+      scanner.startScan(scanFilters(), settings, scanCallback)
     } catch (error: SecurityException) {
       isScanning = false
       sink.emitError("PERMISSION_DENIED", "Bluetooth scan permission revoked")
+    }
+  }
+
+  /**
+   * Hardware scan filters that pass only IwayPlus beacons.
+   *
+   * On Android 13+ the local-name AD structure is matched against the
+   * [IWAYPLUS_NAME_PREFIX] bytes as a prefix, so non-IwayPlus advertisers are
+   * dropped by the controller (or the Bluetooth stack, when the controller has
+   * no free filter slots) and never wake this process. The mask clears ASCII's
+   * case bit, keeping the match case-insensitive like the positioning engine,
+   * which compares on a lower-cased name.
+   * Both the complete and the shortened name AD types are matched, since a
+   * beacon may advertise either.
+   *
+   * `ScanFilter` has no prefix match below Android 13 — `setDeviceName` is an
+   * exact match — so older devices scan unfiltered.
+   */
+  private fun scanFilters(): List<ScanFilter> {
+    if (Build.VERSION.SDK_INT < 33) return emptyList()
+    val prefix = IWAYPLUS_NAME_PREFIX.toByteArray(Charsets.US_ASCII)
+    val caseInsensitiveMask = ByteArray(prefix.size) { ASCII_CASE_MASK }
+    return listOf(
+      ScanRecord.DATA_TYPE_LOCAL_NAME_COMPLETE,
+      ScanRecord.DATA_TYPE_LOCAL_NAME_SHORT,
+    ).map { type ->
+      ScanFilter.Builder()
+        .setAdvertisingDataTypeWithData(type, prefix, caseInsensitiveMask)
+        .build()
     }
   }
 
@@ -170,15 +195,6 @@ class BleScanner(
     result.scanRecord?.deviceName
       ?: runCatching { result.device.name }.getOrNull()
       ?: ""
-
-  /**
-   * Whether an advertisement came from an IwayPlus beacon.
-   *
-   * Matched case-insensitively, to stay identical to the React Native scanner
-   * and to the positioning engine, which compares on a lower-cased name.
-   */
-  private fun isIwayplusBeacon(name: String): Boolean =
-    name.startsWith(IWAYPLUS_NAME_PREFIX, ignoreCase = true)
 
   private fun readingOf(result: ScanResult, name: String): JSONObject {
     val record = result.scanRecord
@@ -261,6 +277,9 @@ class BleScanner(
 
     /** Advertised-name prefix every IwayPlus beacon carries. */
     const val IWAYPLUS_NAME_PREFIX = "IW"
+
+    /** Clears bit 5, which is the only difference between ASCII upper and lower case. */
+    const val ASCII_CASE_MASK: Byte = 0xDF.toByte()
   }
 
   /**

@@ -19,6 +19,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' show sqrt;
 
 import 'package:flutter/material.dart';
 import 'package:iwayplus_scanner/iwayplus_scanner.dart';
@@ -145,7 +146,15 @@ class _NativePanelState extends State<_NativePanel> {
   BleReading? _strongest;
   final List<(int, int)> _recent = []; // (time ms, readings) for readings/sec
   GpsPayload? _gps;
+  int _gpsFixes = 0;
+  int? _gpsLastFixAt; // local epoch ms the last fix arrived
+  GpsStatusPayload? _gpsStatus;
+  final List<String> _gpsLog = []; // newest first
+  Timer? _ticker; // repaints "last fix … ago" while scanning
   HeadingPayload? _heading;
+  int _accelSamples = 0;
+  AccelSample? _accelLast;
+  final List<(int, int)> _accelRecent = []; // (time ms, samples) for Hz
   int _seq = 0;
   int _gaps = 0;
   String? _lastError;
@@ -183,8 +192,31 @@ class _NativePanelState extends State<_NativePanel> {
             ..removeWhere((entry) => now - entry.$1 > 1000);
         case 'gps':
           _gps = GpsPayload.fromJson(event.payload);
+          _gpsFixes++;
+          _gpsLastFixAt = DateTime.now().millisecondsSinceEpoch;
+        case 'gpsStatus':
+          final status = GpsStatusPayload.fromJson(event.payload);
+          _gpsStatus = status;
+          final what = switch (status.reason) {
+            'noFix' => 'no good fix for 5s, backed off',
+            'poorFix' => 'poor fix (±${_gps?.accuracy.round() ?? '?'} m), backed off',
+            'goodFix' => 'good fix (±${_gps?.accuracy.round() ?? '?'} m), restored',
+            _ => 'GPS started',
+          };
+          _gpsLog.insert(
+            0,
+            '${_clock(status.timestamp)}  $what → ${status.intervalMs} ms',
+          );
         case 'heading':
           _heading = HeadingPayload.fromJson(event.payload);
+        case 'accel':
+          final samples = AccelPayload.fromJson(event.payload).samples;
+          _accelSamples += samples.length;
+          if (samples.isNotEmpty) _accelLast = samples.last;
+          final now = DateTime.now().millisecondsSinceEpoch;
+          _accelRecent
+            ..add((now, samples.length))
+            ..removeWhere((entry) => now - entry.$1 > 1000);
         case 'error':
           final error = ErrorPayload.fromJson(event.payload);
           _lastError = '${error.code}: ${error.message}';
@@ -195,6 +227,7 @@ class _NativePanelState extends State<_NativePanel> {
   Future<void> _toggle() async {
     if (_scanning) {
       await IwayplusScanner.stopAll();
+      _ticker?.cancel();
       setState(() => _scanning = false);
       return;
     }
@@ -205,17 +238,36 @@ class _NativePanelState extends State<_NativePanel> {
     }
     setState(() {
       _scanning = true;
-      _batches = _readings = _dropped = _seq = _gaps = 0;
+      _batches = _readings = _dropped = _seq = _gaps = _accelSamples = 0;
+      _accelLast = null;
+      _accelRecent.clear();
+      _gps = null;
+      _gpsFixes = 0;
+      _gpsLastFixAt = null;
+      _gpsStatus = null;
+      _gpsLog.clear();
       _devices.clear();
       _recent.clear();
       _strongest = null;
       _lastError = null;
     });
+    _ticker?.cancel();
+    _ticker = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => setState(() {}),
+    );
     await IwayplusScanner.start(ScannerStream.values);
+  }
+
+  static String _clock(int epochMs) {
+    final t = DateTime.fromMillisecondsSinceEpoch(epochMs);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
   }
 
   @override
   void dispose() {
+    _ticker?.cancel();
     _subscription?.cancel();
     if (_scanning) IwayplusScanner.stopAll();
     super.dispose();
@@ -228,10 +280,57 @@ class _NativePanelState extends State<_NativePanel> {
     final strongest = _strongest;
     final gps = _gps;
     final heading = _heading;
+    final accelHz = _accelRecent.fold<int>(0, (sum, entry) => sum + entry.$2);
+    final accel = _accelLast;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
       children: [
+        // First, so it can be watched without scrolling while walking from
+        // indoors to outdoors.
+        const _Section('gps'),
+        _Row(
+          'mode',
+          switch (_gpsStatus) {
+            null => '-',
+            final s when s.backedOff => 'BACKED OFF · ${s.intervalMs} ms',
+            final s => 'NORMAL · ${s.intervalMs} ms',
+          },
+          color: switch (_gpsStatus) {
+            null => null,
+            final s when s.backedOff => const Color(0xFFFBBF24),
+            _ => const Color(0xFF4ADE80),
+          },
+        ),
+        _Row('fixes', '$_gpsFixes'),
+        _Row(
+          'last fix',
+          switch ((gps, _gpsLastFixAt)) {
+            (final g?, final at?) =>
+              '${((DateTime.now().millisecondsSinceEpoch - at) / 1000).floor()}s ago'
+                  ' · ±${g.accuracy.round()} m',
+            _ => 'none yet',
+          },
+        ),
+        _Row(
+          'position',
+          gps == null
+              ? '-'
+              : '${gps.latitude.toStringAsFixed(5)}, '
+                    '${gps.longitude.toStringAsFixed(5)}',
+        ),
+        for (final line in _gpsLog.take(8))
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              line,
+              style: const TextStyle(
+                color: _label,
+                fontSize: 14,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
         const _Section('adapter'),
         _Row('bluetooth', adapter?.bluetooth ?? '-'),
         _Row('location', adapter?.location ?? '-'),
@@ -256,14 +355,16 @@ class _NativePanelState extends State<_NativePanel> {
                     '(${strongest.rssi} dBm)',
         ),
         const _Section('other streams'),
-        _Row(
-          'gps',
-          gps == null
-              ? '-'
-              : '${gps.latitude.toStringAsFixed(5)}, ${gps.longitude.toStringAsFixed(5)} '
-                    '(±${gps.accuracy.round()}m)',
-        ),
         _Row('heading', heading == null ? '-' : '${heading.heading.round()}°'),
+        _Row('accel samples', '$_accelSamples'),
+        _Row('accel Hz', '$accelHz'),
+        _Row(
+          'accel |a| m/s²',
+          accel == null
+              ? '-'
+              : sqrt(accel.x * accel.x + accel.y * accel.y + accel.z * accel.z)
+                    .toStringAsFixed(2),
+        ),
         const _Section('protocol'),
         _Row('seq', '$_seq'),
         _Row('seq gaps', '$_gaps'),
@@ -306,9 +407,10 @@ class _Section extends StatelessWidget {
 }
 
 class _Row extends StatelessWidget {
-  const _Row(this.label, this.value);
+  const _Row(this.label, this.value, {this.color});
   final String label;
   final String value;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -324,10 +426,11 @@ class _Row extends StatelessWidget {
           child: Text(
             value,
             textAlign: TextAlign.right,
-            style: const TextStyle(
+            style: TextStyle(
+              color: color,
               fontSize: 16,
               fontWeight: FontWeight.w500,
-              fontFeatures: [FontFeature.tabularFigures()],
+              fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
         ),

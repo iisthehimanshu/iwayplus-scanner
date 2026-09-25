@@ -27,6 +27,11 @@ const String bridgeBootstrap =
   window.__iwayplusScanner = {
     available: true,
     protocolVersion: 1,
+    /**
+     * The streams this host can run. The page checks it before asking for
+     * one, so a host built before a stream existed is never asked for it.
+     */
+    streams: ['ble', 'gps', 'heading', 'accel'],
 
     /**
      * The page assigns this. Events that arrive before it is set are queued,

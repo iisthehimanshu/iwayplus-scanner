@@ -41,6 +41,7 @@ class IwayplusScannerPlugin :
   private var ble: BleScanner? = null
   private var gps: GpsScanner? = null
   private var heading: HeadingScanner? = null
+  private var accel: AccelScanner? = null
 
   private var eventSink: EventChannel.EventSink? = null
   private var sequence = 0L
@@ -56,6 +57,7 @@ class IwayplusScannerPlugin :
     ble = BleScanner(context, sink)
     gps = GpsScanner(context, sink)
     heading = HeadingScanner(context, sink)
+    accel = AccelScanner(context, sink)
 
     methods = MethodChannel(binding.binaryMessenger, METHOD_CHANNEL)
     methods.setMethodCallHandler(this)
@@ -70,13 +72,15 @@ class IwayplusScannerPlugin :
     ble = null
     gps = null
     heading = null
+    accel = null
   }
 
   override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
     val ble = ble
     val gps = gps
     val heading = heading
-    if (ble == null || gps == null || heading == null) {
+    val accel = accel
+    if (ble == null || gps == null || heading == null || accel == null) {
       result.error(ERROR_CODE, "Scanner is detached from the engine", null)
       return
     }
@@ -87,6 +91,7 @@ class IwayplusScannerPlugin :
           ble.configure(config)
           gps.configure(config)
           heading.configure(config)
+          accel.configure(config)
           result.success(null)
         }
         "startBle" -> { announceOnce(); ble.start(); result.success(null) }
@@ -95,6 +100,8 @@ class IwayplusScannerPlugin :
         "stopGps" -> { gps.stop(); result.success(null) }
         "startHeading" -> { announceOnce(); heading.start(); result.success(null) }
         "stopHeading" -> { heading.stop(); result.success(null) }
+        "startAccel" -> { announceOnce(); accel.start(); result.success(null) }
+        "stopAccel" -> { accel.stop(); result.success(null) }
         "stopAll" -> {
           stopAllStreams()
           // The page reads a sequence reset as "this is a fresh session", which
@@ -168,6 +175,7 @@ class IwayplusScannerPlugin :
     ble?.stop()
     gps?.stop()
     heading?.stop()
+    accel?.stop()
   }
 
   private fun stateJson(): String = JSONObject()
@@ -184,7 +192,8 @@ class IwayplusScannerPlugin :
       JSONObject()
         .put("ble", ble?.isScanning ?: false)
         .put("gps", gps?.isScanning ?: false)
-        .put("heading", heading?.isScanning ?: false),
+        .put("heading", heading?.isScanning ?: false)
+        .put("accel", accel?.isScanning ?: false),
     )
     .toString()
 

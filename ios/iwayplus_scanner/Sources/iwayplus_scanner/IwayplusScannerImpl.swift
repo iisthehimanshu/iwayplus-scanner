@@ -1,5 +1,6 @@
 import CoreBluetooth
 import CoreLocation
+import CoreMotion
 import Foundation
 import UIKit
 
@@ -20,6 +21,7 @@ public final class IwayplusScannerImpl: NSObject,
 
   private var centralManager: CBCentralManager!
   private var locationManager: CLLocationManager!
+  private let motionManager = CMMotionManager()
 
   // Tunables, all supplied by the page. See ScannerConfig on the TS side.
   private var flushInterval: TimeInterval = 0.25
@@ -27,6 +29,8 @@ public final class IwayplusScannerImpl: NSObject,
   private var gpsDistanceFilter: CLLocationDistance = kCLDistanceFilterNone
   private var headingFilterDeg: CLLocationDegrees = 1
   private var maxBufferedReadings = 2000
+  private var accelInterval: TimeInterval = 0.04
+  private var accelFlushInterval: TimeInterval = 0.1
 
   // CoreBluetooth delivers one callback per advertisement and, with duplicates
   // allowed, that is a very high rate in a beacon-dense venue. The Flutter
@@ -38,12 +42,18 @@ public final class IwayplusScannerImpl: NSObject,
   private var flushTimer: Timer?
   private var timeoutTimer: Timer?
 
+  // Accelerometer samples as [x, y, z, epochMs], batched like advertisements:
+  // every emission is a bridge crossing.
+  private var accelBuffer: [[Double]] = []
+  private var accelFlushTimer: Timer?
+
   private var wantsBleScan = false
   private var startGpsAfterAuthorization = false
 
   @objc public private(set) var isScanningBle = false
   @objc public private(set) var isScanningGps = false
   @objc public private(set) var isScanningHeading = false
+  @objc public private(set) var isScanningAccel = false
 
   @objc public override init() {
     super.init()
@@ -81,6 +91,13 @@ public final class IwayplusScannerImpl: NSObject,
     if let value = object["maxBufferedReadings"] as? Int {
       maxBufferedReadings = min(max(value, 100), 20000)
     }
+    let previousAccel = (accelInterval, accelFlushInterval)
+    if let value = object["accelIntervalMs"] as? Double {
+      accelInterval = min(max(value, 10), 1000) / 1000.0
+    }
+    if let value = object["accelFlushIntervalMs"] as? Double {
+      accelFlushInterval = min(max(value, 20), 2000) / 1000.0
+    }
 
     if isScanningBle {
       restartFlushTimer()
@@ -90,6 +107,10 @@ public final class IwayplusScannerImpl: NSObject,
     }
     if isScanningHeading {
       locationManager.headingFilter = headingFilterDeg
+    }
+    if isScanningAccel && previousAccel != (accelInterval, accelFlushInterval) {
+      stopAccel()
+      startAccel()
     }
   }
 
@@ -360,12 +381,77 @@ public final class IwayplusScannerImpl: NSObject,
     }
   }
 
+  // MARK: - Accelerometer
+
+  /// Raw accelerometer, gravity included, for the page's step detector.
+  ///
+  /// The page's only alternative in a WebView is `devicemotion`, which runs the
+  /// accelerometer, gyroscope and gravity-free acceleration together at ~60Hz
+  /// although the step detector reads one field. This runs the accelerometer
+  /// alone. No permission is involved: CoreMotion gates only motion-activity
+  /// and pedometer data, not raw accelerometer readings.
+  @objc public func startAccel() {
+    guard !isScanningAccel else { return }
+    guard motionManager.isAccelerometerAvailable else {
+      emitError("NO_ACCELEROMETER", "No accelerometer on this device")
+      return
+    }
+    motionManager.accelerometerUpdateInterval = accelInterval
+    motionManager.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
+      guard let self, let data, self.isScanningAccel else { return }
+      guard self.accelBuffer.count < Self.maxBufferedAccelSamples else { return }
+      // CoreMotion reports in g with the opposite sign to Android. Converted to
+      // Android's m/s², which is what the step detector's thresholds are tuned
+      // for — the same conversion sensors_plus applies on iOS.
+      let a = data.acceleration
+      // `data.timestamp` counts from boot, not from the epoch.
+      let age = ProcessInfo.processInfo.systemUptime - data.timestamp
+      let epochMs = ((Date().timeIntervalSince1970 - age) * 1000).rounded()
+      self.accelBuffer.append([
+        -a.x * Self.standardGravity,
+        -a.y * Self.standardGravity,
+        -a.z * Self.standardGravity,
+        epochMs,
+      ])
+    }
+    isScanningAccel = true
+    accelFlushTimer?.invalidate()
+    accelFlushTimer = Self.mainTimer(interval: accelFlushInterval, repeats: true) {
+      [weak self] _ in
+      self?.flushAccel()
+    }
+  }
+
+  @objc public func stopAccel() {
+    isScanningAccel = false
+    motionManager.stopAccelerometerUpdates()
+    accelFlushTimer?.invalidate()
+    accelFlushTimer = nil
+    // Dropped, not flushed: after a stop nobody is waiting on these.
+    accelBuffer.removeAll()
+  }
+
+  private func flushAccel() {
+    guard !accelBuffer.isEmpty else { return }
+    // Whole-number timestamps: JSONSerialization would otherwise write them as
+    // doubles, and Android sends integers.
+    let samples: [[Any]] = accelBuffer.map { [$0[0], $0[1], $0[2], Int64($0[3])] }
+    accelBuffer.removeAll(keepingCapacity: true)
+    emit("accel", ["samples": samples])
+  }
+
+  private static let standardGravity = 9.80665
+
+  /// A few seconds of samples at the fastest allowed rate.
+  private static let maxBufferedAccelSamples = 500
+
   // MARK: - State
 
   @objc public func stopAll() {
     stopBle()
     stopGps()
     stopHeading()
+    stopAccel()
   }
 
   @objc public func stateJson() -> String {
@@ -400,6 +486,7 @@ public final class IwayplusScannerImpl: NSObject,
         "ble": isScanningBle,
         "gps": isScanningGps,
         "heading": isScanningHeading,
+        "accel": isScanningAccel,
       ],
     ])
   }

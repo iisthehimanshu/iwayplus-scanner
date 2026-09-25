@@ -1,6 +1,6 @@
 # iwayplus_scanner
 
-BLE + GPS + heading scanning for a Flutter host app, relayed into the Iwayplus
+BLE + GPS + heading + accelerometer scanning for a Flutter host app, relayed into the Iwayplus
 navigation page running in a WebView.
 
 The Flutter counterpart of
@@ -15,6 +15,7 @@ of `navigation_sdk`'s plugins are compiled into the host binary.
 │  CoreBluetooth / BLE scan │  JSON  │  positioning algorithms         │
 │  CoreLocation / GPS       │ ─────► │  beacon map, routing            │
 │  magnetometer / heading   │        │  map + navigation UI            │
+│  accelerometer            │        │  step detection                 │
 └───────────────────────────┘        └─────────────────────────────────┘
               ▲                                      │
               └────────── start / stop ◄─────────────┘
@@ -167,7 +168,8 @@ a JavaScript channel, and events travel host → page as JSON envelopes:
 {"v":1,"seq":42,"t":1757337600000,"type":"ble","payload":{ … }}
 ```
 
-Event types: `hello`, `ble`, `gps`, `heading`, `adapter`, `error`. The React
+Event types: `hello`, `ble`, `gps`, `gpsStatus`, `heading`, `accel`, `adapter`,
+`error`. The React
 Native package's `src/types.ts` is the source of truth for the schemas;
 `lib/src/types.dart` mirrors it.
 
@@ -222,7 +224,8 @@ needs written consent from Iwayplus.
 ## Example
 
 `example/` is the same smoke test as the React Native ScannerTestApp: a
-**native** tab with live adapter, BLE, GPS, heading and sequence counters, and a
+**native** tab with live adapter, BLE, GPS, heading, accelerometer and sequence
+counters, and a
 **bridge** tab running the hosted page.
 
 ```bash

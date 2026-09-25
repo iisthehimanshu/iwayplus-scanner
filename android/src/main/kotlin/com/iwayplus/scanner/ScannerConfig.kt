@@ -16,8 +16,13 @@ data class ScannerConfig(
   val timeoutMs: Long? = null,
   val gpsIntervalMs: Long = 1_000L,
   val gpsDistanceFilterM: Float = 0f,
+  val gpsNoFixTimeoutMs: Long = 5_000L,
+  val gpsBackoffIntervalMs: Long = 5_000L,
+  val gpsGoodAccuracyM: Float = 20f,
   val headingFilterDeg: Float = 1f,
   val maxBufferedReadings: Int = 2_000,
+  val accelIntervalMs: Long = 40L,
+  val accelFlushIntervalMs: Long = 100L,
 ) {
   companion object {
     fun fromJson(json: String?): ScannerConfig {
@@ -41,12 +46,28 @@ data class ScannerConfig(
             "gpsDistanceFilterM",
             defaults.gpsDistanceFilterM.toDouble(),
           ).toFloat().coerceAtLeast(0f),
+          gpsNoFixTimeoutMs = obj.optLong("gpsNoFixTimeoutMs", defaults.gpsNoFixTimeoutMs)
+            .coerceIn(1_000L, 600_000L),
+          gpsBackoffIntervalMs = obj.optLong(
+            "gpsBackoffIntervalMs",
+            defaults.gpsBackoffIntervalMs,
+          ).coerceIn(200L, 600_000L),
+          gpsGoodAccuracyM = obj.optDouble(
+            "gpsGoodAccuracyM",
+            defaults.gpsGoodAccuracyM.toDouble(),
+          ).toFloat().coerceIn(1f, 1_000f),
           headingFilterDeg = obj.optDouble(
             "headingFilterDeg",
             defaults.headingFilterDeg.toDouble(),
           ).toFloat().coerceIn(0f, 45f),
           maxBufferedReadings = obj.optInt("maxBufferedReadings", defaults.maxBufferedReadings)
             .coerceIn(100, 20_000),
+          accelIntervalMs = obj.optLong("accelIntervalMs", defaults.accelIntervalMs)
+            .coerceIn(10L, 1_000L),
+          accelFlushIntervalMs = obj.optLong(
+            "accelFlushIntervalMs",
+            defaults.accelFlushIntervalMs,
+          ).coerceIn(20L, 2_000L),
         )
       } catch (error: Exception) {
         // A malformed config must not take scanning down with it.

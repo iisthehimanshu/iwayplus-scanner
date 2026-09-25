@@ -16,7 +16,7 @@ relayed into the Iwayplus navigation page running in a WebView.
   s.source           = { :path => '.' }
   s.source_files = 'iwayplus_scanner/Sources/iwayplus_scanner/**/*'
   s.dependency 'Flutter'
-  s.frameworks = 'CoreBluetooth', 'CoreLocation'
+  s.frameworks = 'CoreBluetooth', 'CoreLocation', 'CoreMotion'
   s.platform = :ios, '14.0'
 
   # Flutter.framework does not contain a i386 slice.

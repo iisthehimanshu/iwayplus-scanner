@@ -54,6 +54,7 @@ class IwayplusScanner {
         ScannerStream.ble => 'startBle',
         ScannerStream.gps => 'startGps',
         ScannerStream.heading => 'startHeading',
+        ScannerStream.accel => 'startAccel',
       }),
   ]);
 
@@ -63,6 +64,7 @@ class IwayplusScanner {
         ScannerStream.ble => 'stopBle',
         ScannerStream.gps => 'stopGps',
         ScannerStream.heading => 'stopHeading',
+        ScannerStream.accel => 'stopAccel',
       }),
   ]);
 

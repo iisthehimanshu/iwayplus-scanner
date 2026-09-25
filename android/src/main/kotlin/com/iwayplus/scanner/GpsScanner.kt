@@ -8,6 +8,8 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import org.json.JSONObject
@@ -21,6 +23,17 @@ import org.json.JSONObject
  * at an accuracy the consumer cannot act on. Indoor position comes from the
  * beacons, which are the authority once the user is inside, and a coarse
  * network fix competing with them is noise rather than a fallback.
+ *
+ * Without the network provider, going indoors means the fixes simply stop, or
+ * degrade to what a chip sees through a window. Updates are requested at
+ * [ScannerConfig.gpsBackoffIntervalMs] instead of [ScannerConfig.gpsIntervalMs]
+ * after [ScannerConfig.gpsNoFixTimeoutMs] with no good fix, and at once on a
+ * poor one — worse than [ScannerConfig.gpsGoodAccuracyM], or with no accuracy
+ * at all. Only a good fix restores the normal interval. GPS is never turned
+ * off: whether the user is outdoors again is exactly what a fix tells us.
+ *
+ * Poor fixes are still forwarded. This decides how often to ask the chip, not
+ * what the consumer may use.
  */
 class GpsScanner(
   private val context: Context,
@@ -29,7 +42,14 @@ class GpsScanner(
   private val manager: LocationManager? =
     context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
 
+  private val handler = Handler(Looper.getMainLooper())
   private var config = ScannerConfig()
+
+  /** True while updates are requested at the backoff interval. */
+  private var backedOff = false
+
+  /** Fires when no fix has arrived for [ScannerConfig.gpsNoFixTimeoutMs]. */
+  private val noFixTimeout = Runnable { setBackedOff(true, REASON_NO_FIX) }
 
   var isScanning: Boolean = false
     private set
@@ -81,26 +101,91 @@ class GpsScanner(
       return
     }
 
-    try {
-      manager.requestLocationUpdates(
-        LocationManager.GPS_PROVIDER,
-        config.gpsIntervalMs,
-        config.gpsDistanceFilterM,
-        listener,
-      )
+    backedOff = false
+    if (requestUpdates(config.gpsIntervalMs)) {
       isScanning = true
-    } catch (error: SecurityException) {
-      sink.emitError("PERMISSION_DENIED", "Location permission revoked")
+      armNoFixTimeout()
+      emitStatus(REASON_START)
     }
   }
 
   fun stop() {
     isScanning = false
+    backedOff = false
+    handler.removeCallbacks(noFixTimeout)
     try {
       manager?.removeUpdates(listener)
     } catch (error: SecurityException) {
       Log.w(TAG, "Unable to remove location updates", error)
     }
+  }
+
+  /**
+   * Registering again with the same listener replaces the earlier request, so
+   * this is also how the interval changes while scanning.
+   */
+  @SuppressLint("MissingPermission")
+  private fun requestUpdates(intervalMs: Long): Boolean {
+    val manager = this.manager ?: return false
+    return try {
+      manager.requestLocationUpdates(
+        LocationManager.GPS_PROVIDER,
+        intervalMs,
+        config.gpsDistanceFilterM,
+        listener,
+      )
+      true
+    } catch (error: SecurityException) {
+      isScanning = false
+      sink.emitError("PERMISSION_DENIED", "Location permission revoked")
+      false
+    }
+  }
+
+  private fun armNoFixTimeout() {
+    handler.removeCallbacks(noFixTimeout)
+    handler.postDelayed(noFixTimeout, config.gpsNoFixTimeoutMs)
+  }
+
+  private fun setBackedOff(value: Boolean, reason: String) {
+    if (!isScanning || backedOff == value) return
+    backedOff = value
+    val interval = if (value) config.gpsBackoffIntervalMs else config.gpsIntervalMs
+    Log.i(TAG, "GPS $reason: ${if (value) "backing off" else "restoring"} to ${interval}ms updates")
+    if (requestUpdates(interval)) emitStatus(reason)
+  }
+
+  /** Accurate enough to say the chip has a real view of the sky. */
+  private fun isGoodFix(location: Location): Boolean =
+    location.hasAccuracy() && location.accuracy <= config.gpsGoodAccuracyM
+
+  private fun onFix(location: Location) {
+    if (isGoodFix(location)) {
+      armNoFixTimeout()
+      setBackedOff(false, REASON_GOOD_FIX)
+    } else {
+      // Backed off already or about to be, so the no-fix timer has nothing
+      // left to decide until a good fix re-arms it.
+      handler.removeCallbacks(noFixTimeout)
+      setBackedOff(true, REASON_POOR_FIX)
+    }
+  }
+
+  /**
+   * Which interval is in effect. Emitted on start and on every switch, so a
+   * consumer can see the backoff without waiting for a fix that indoors will
+   * not come.
+   */
+  private fun emitStatus(reason: String) {
+    sink.emit(
+      "gpsStatus",
+      JSONObject()
+        .put("backedOff", backedOff)
+        .put("intervalMs", if (backedOff) config.gpsBackoffIntervalMs else config.gpsIntervalMs)
+        .put("reason", reason)
+        .put("timestamp", System.currentTimeMillis())
+        .toString(),
+    )
   }
 
   private val listener = object : LocationListener {
@@ -117,6 +202,9 @@ class GpsScanner(
           .put("timestamp", location.time)
           .toString(),
       )
+      // After the fix itself, so a consumer reading the `gpsStatus` this may
+      // emit already has the fix that caused it.
+      onFix(location)
     }
 
     @Deprecated("Required by LocationListener on API < 29")
@@ -133,5 +221,11 @@ class GpsScanner(
 
   private companion object {
     const val TAG = "IwayplusGpsScanner"
+
+    // `gpsStatus.reason`: why the interval is what it is.
+    const val REASON_START = "start"
+    const val REASON_NO_FIX = "noFix"
+    const val REASON_POOR_FIX = "poorFix"
+    const val REASON_GOOD_FIX = "goodFix"
   }
 }

@@ -68,6 +68,13 @@ public final class IwayplusScannerPlugin: NSObject, FlutterPlugin, FlutterStream
     case "stopHeading":
       implStorage?.stopHeading()
       result(nil)
+    case "startAccel":
+      announceOnce()
+      impl.startAccel()
+      result(nil)
+    case "stopAccel":
+      implStorage?.stopAccel()
+      result(nil)
     case "stopAll":
       implStorage?.stopAll()
       // A sequence reset reads as "fresh session" downstream, which is what a

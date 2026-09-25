@@ -1,3 +1,36 @@
+## Unreleased
+
+* New `accel` stream: the raw accelerometer, gravity included, for the page's
+  step detector. Samples are in Android's convention (m/s², ~+9.8 on the axis
+  pointing up at rest); iOS readings are converted to match. It samples at
+  25Hz by default (`accelIntervalMs`) and batches every 100ms
+  (`accelFlushIntervalMs`). On Android the batch window is also the sensor's
+  report latency, and samples that arrive faster than the configured rate are
+  dropped — devices treat the rate as a hint and can deliver several times
+  more.
+* The bridge bootstrap now lists its streams in `window.__iwayplusScanner.streams`.
+  The page reads it before asking for `accel`, so a host built before this
+  release is never asked for a stream it cannot run, and the page falls back
+  to `devicemotion` there.
+* `adapter` state reports `scanning.accel`.
+* Android: when GPS delivers no good fix for 5 seconds (`gpsNoFixTimeoutMs`)
+  — what being indoors looks like now that the network provider is gone — GPS
+  updates are requested every 5 seconds (`gpsBackoffIntervalMs`) instead of
+  every `gpsIntervalMs`. A fix worse than 20 m (`gpsGoodAccuracyM`), or with no
+  accuracy, backs off at once. Only a good fix restores `gpsIntervalMs`. Every
+  fix is still forwarded.
+  GPS is never switched off. iOS is unchanged: it has no update interval, and
+  Core Location keeps delivering Wi-Fi-assisted fixes indoors.
+* New `gpsStatus` event (Android): `{backedOff, intervalMs, reason, timestamp}`,
+  emitted when GPS starts and on every backoff or recovery, so the switch is
+  visible without waiting for a fix.
+* iOS: `CoreMotion` is added to the linked frameworks.
+* Android 13+: BLE advertisements are filtered to IwayPlus beacons by a
+  hardware `ScanFilter` on the advertised-name prefix (`IW`,
+  case-insensitive), so other advertisers never reach the app. The name check
+  in the scan callback is removed. Below Android 13, where `ScanFilter` cannot
+  match a prefix, scanning is unfiltered and every advertiser is relayed.
+
 ## 0.2.1
 
 * Heading now samples at `SENSOR_DELAY_UI` (~16.7Hz) instead of

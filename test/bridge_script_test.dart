@@ -53,6 +53,14 @@ void main() {
         expect(bridgeBootstrap, contains("cmd: '$command'"));
       }
     });
+
+    test('advertises every stream the host can run', () {
+      // The page only asks for accel when it sees it here, so a missing entry
+      // silently sends the page back to devicemotion.
+      for (final stream in ScannerStream.values) {
+        expect(bridgeBootstrap, contains("'${stream.name}'"));
+      }
+    });
   });
 
   group('types', () {
@@ -91,6 +99,7 @@ void main() {
 
     test('ScannerStream.byName matches page stream names', () {
       expect(ScannerStream.byName('heading'), ScannerStream.heading);
+      expect(ScannerStream.byName('accel'), ScannerStream.accel);
       expect(ScannerStream.byName('wifi'), isNull);
     });
 
@@ -104,6 +113,22 @@ void main() {
       expect(state.bluetooth, 'on');
       expect(state.locationPermission, isFalse);
       expect(state.scanningHeading, isTrue);
+      // Absent from hosts built before the accelerometer stream existed.
+      expect(state.scanningAccel, isFalse);
+    });
+
+    test('AccelPayload reads [x, y, z, timestamp] samples', () {
+      final payload = AccelPayload.fromJson({
+        'samples': [
+          [0.1, -0.2, 9.8, 1000],
+          [1, 2, 3, 1040.0],
+          [1, 2, 3], // malformed, skipped
+        ],
+      });
+      expect(payload.samples, hasLength(2));
+      expect(payload.samples.first.z, 9.8);
+      expect(payload.samples.last.x, 1.0);
+      expect(payload.samples.last.timestamp, 1040);
     });
   });
 }
