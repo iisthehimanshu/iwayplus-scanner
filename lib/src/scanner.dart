@@ -71,6 +71,14 @@ class IwayplusScanner {
   /// Stops every stream and resets the sequence counter.
   static Future<void> stopAll() => _methods.invokeMethod<void>('stopAll');
 
+  /// Opens this app's page in system settings, where the permissions scanning
+  /// needs can be granted after being denied.
+  ///
+  /// False when there was nothing to open it from — on Android, no foreground
+  /// activity.
+  static Future<bool> openSettings() async =>
+      await _methods.invokeMethod<bool>('openSettings') ?? false;
+
   /// Current adapter power and permission status. Also emitted as an
   /// `adapter` event.
   static Future<AdapterState> getState() async {

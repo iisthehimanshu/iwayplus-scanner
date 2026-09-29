@@ -49,6 +49,7 @@ void main() {
         'getState',
         'ready',
         'close',
+        'openSettings',
       ]) {
         expect(bridgeBootstrap, contains("cmd: '$command'"));
       }

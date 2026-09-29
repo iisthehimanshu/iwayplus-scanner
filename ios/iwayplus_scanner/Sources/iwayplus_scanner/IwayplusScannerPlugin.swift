@@ -90,6 +90,15 @@ public final class IwayplusScannerPlugin: NSObject, FlutterPlugin, FlutterStream
       // iOS raises its own prompts on first use of CoreBluetooth and
       // CoreLocation, driven by the host's Info.plist usage strings.
       result(true)
+    case "openSettings":
+      // Opens this app's page in Settings, which lists the Bluetooth and
+      // location switches once the app has asked for them.
+      guard let url = URL(string: UIApplication.openSettingsURLString) else {
+        result(false)
+        return
+      }
+      UIApplication.shared.open(url)
+      result(true)
     default:
       result(FlutterMethodNotImplemented)
     }

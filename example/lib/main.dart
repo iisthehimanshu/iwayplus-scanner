@@ -7,7 +7,7 @@
 ///
 /// Run with the credentials the hosted page requires:
 /// `flutter run --dart-define=IWAYPLUS_API_KEY=KEY --dart-define=IWAYPLUS_VENUE=VENUE`
-/// (the venue defaults to Iwayplus).
+/// (without a venue, the page opens the one nearest the user).
 ///
 /// To test a navigation_sdk web build that isn't deployed yet, point the
 /// bridge tab at a local server with
@@ -25,10 +25,7 @@ import 'package:flutter/material.dart';
 import 'package:iwayplus_scanner/iwayplus_scanner.dart';
 
 const _apiKey = String.fromEnvironment('IWAYPLUS_API_KEY');
-const _venue = String.fromEnvironment(
-  'IWAYPLUS_VENUE',
-  defaultValue: 'Iwayplus',
-);
+const _venue = String.fromEnvironment('IWAYPLUS_VENUE');
 const _mapUrl = String.fromEnvironment(
   'IWAYPLUS_MAP_URL',
   defaultValue: 'https://maps.iwayplus.in/iwaymaps/',
@@ -454,8 +451,8 @@ class _BridgePanelState extends State<_BridgePanel> {
 
   static final String _url =
       '$_mapUrl'
-      '?venueName=${Uri.encodeQueryComponent(_venue)}'
-      '&apiKey=${Uri.encodeQueryComponent(_apiKey)}'
+      '?apiKey=${Uri.encodeQueryComponent(_apiKey)}'
+      '${_venue.isEmpty ? '' : '&venueName=${Uri.encodeQueryComponent(_venue)}'}'
       '${_buildingIds.isEmpty ? '' : '&buildingIds=${Uri.encodeQueryComponent(_buildingIds)}'}';
 
   @override
@@ -464,7 +461,7 @@ class _BridgePanelState extends State<_BridgePanel> {
       return const _Message(
         title: 'API key needed',
         body:
-            'The hosted page requires venueName and apiKey. Run with\n\n'
+            'The hosted page requires apiKey. Run with\n\n'
             'flutter run --dart-define=IWAYPLUS_API_KEY=<key>',
       );
     }
@@ -486,7 +483,8 @@ class _BridgePanelState extends State<_BridgePanel> {
             onClose: () => setState(() => _closed = true),
             onCommand: (command) {
               setState(() => _lastCommand = '${command['cmd']}');
-              return true;
+              // Let the scanner open system settings itself.
+              return command['cmd'] != 'openSettings';
             },
           ),
         ),

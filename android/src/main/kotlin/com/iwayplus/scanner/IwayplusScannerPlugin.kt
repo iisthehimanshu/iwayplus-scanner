@@ -2,10 +2,13 @@ package com.iwayplus.scanner
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -116,6 +119,7 @@ class IwayplusScannerPlugin :
           result.success(state)
         }
         "requestPermissions" -> requestPermissions(result)
+        "openSettings" -> result.success(openAppSettings())
         else -> result.notImplemented()
       }
     } catch (error: Exception) {
@@ -249,6 +253,18 @@ class IwayplusScannerPlugin :
       ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED
     }
     result.success(granted)
+    return true
+  }
+
+  /** Opens this app's details page, where denied permissions can be granted. */
+  private fun openAppSettings(): Boolean {
+    val activity = activityBinding?.activity ?: return false
+    activity.startActivity(
+      Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.fromParts("package", activity.packageName, null),
+      ),
+    )
     return true
   }
 

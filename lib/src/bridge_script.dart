@@ -81,6 +81,12 @@ const String bridgeBootstrap =
     stopAll: function () { return this.send({ cmd: 'stopAll' }); },
     getState: function () { return this.send({ cmd: 'getState' }); },
     ready: function () { return this.send({ cmd: 'ready' }); },
+    /**
+     * Opens the host app's settings page. The page calls this from its
+     * "permission required" prompt: the permissions are the host's, so no
+     * browser API inside the WebView can reach them.
+     */
+    openSettings: function () { return this.send({ cmd: 'openSettings' }); },
     close: function () { return this.send({ cmd: 'close' }); }
   };
 

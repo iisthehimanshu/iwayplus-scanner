@@ -60,6 +60,9 @@ class IwayplusNavigation extends StatefulWidget {
 
   /// A command the bridge does not recognise. Return true if the app handled
   /// it. Use this for app-level intents — sharing, booking, deep links.
+  ///
+  /// Also offered `openSettings` first: return true to show your own
+  /// permission flow instead of the system settings page.
   final bool Function(Map<String, dynamic> command)? onCommand;
 
   /// Outcome of the automatic permission request.
@@ -226,6 +229,10 @@ class IwayplusNavigationState extends State<IwayplusNavigation>
         unawaited(IwayplusScanner.stopAll());
       case 'getState':
         unawaited(IwayplusScanner.getState());
+      case 'openSettings':
+        if (!(widget.onCommand?.call(command) ?? false)) {
+          unawaited(IwayplusScanner.openSettings());
+        }
       case 'close':
         widget.onClose?.call();
       default:
