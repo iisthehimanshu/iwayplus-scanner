@@ -74,6 +74,9 @@ class IwayplusScanner {
   /// Opens this app's page in system settings, where the permissions scanning
   /// needs can be granted after being denied.
   ///
+  /// On iOS a location that was never asked has no switch there yet, so the
+  /// system prompt is shown instead.
+  ///
   /// False when there was nothing to open it from — on Android, no foreground
   /// activity.
   static Future<bool> openSettings() async =>
@@ -91,15 +94,16 @@ class IwayplusScanner {
 
 /// Requests the runtime permissions scanning needs.
 ///
-/// Android only — iOS raises its own prompts on first use of CoreBluetooth and
-/// CoreLocation, driven by the usage strings in the host's Info.plist, so this
-/// resolves `true` there straight away.
+/// On iOS this asks for "while using the app" location and resolves to the
+/// answer. Bluetooth needs no request of its own: iOS prompts for it when the
+/// scanner is created, which this does. The host's Info.plist needs
+/// `NSLocationWhenInUseUsageDescription`, or iOS ignores the request.
 ///
 /// Call this and confirm it resolves `true` *before* showing the navigation
 /// view. Starting a scan against a denied adapter produces no readings and no
 /// error the page can explain to the user.
 Future<bool> requestScannerPermissions() async {
-  if (!Platform.isAndroid) return true;
+  if (!Platform.isAndroid && !Platform.isIOS) return true;
   return await IwayplusScanner._methods.invokeMethod<bool>(
         'requestPermissions',
       ) ??

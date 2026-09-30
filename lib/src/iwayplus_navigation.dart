@@ -40,7 +40,7 @@ class IwayplusNavigation extends StatefulWidget {
   /// Scanner tunables, applied when the page reports it is ready.
   final ScannerConfig? config;
 
-  /// Request Android runtime permissions on first build (default true). Set
+  /// Request runtime permissions on first build (default true). Set
   /// false if the app runs its own permission flow — but grant them before
   /// showing this widget either way.
   final bool autoRequestPermissions;

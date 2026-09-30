@@ -49,6 +49,8 @@ public final class IwayplusScannerImpl: NSObject,
 
   private var wantsBleScan = false
   private var startGpsAfterAuthorization = false
+  /// Callers of [requestLocationPermission] waiting on the system prompt.
+  private var locationPermissionWaiters: [(Bool) -> Void] = []
 
   @objc public private(set) var isScanningBle = false
   @objc public private(set) var isScanningGps = false
@@ -282,6 +284,43 @@ public final class IwayplusScannerImpl: NSObject,
     emit("ble", payload)
   }
 
+  // MARK: - Permissions
+
+  /// Asks for "while using the app" location if it has never been asked, and
+  /// reports whether location is granted once the user has answered.
+  ///
+  /// Asking only from `startGps` is not enough: the page reads a location that
+  /// was never asked as not granted and shows its permission prompt instead of
+  /// starting GPS, so the question was never put. iOS lists Location on the
+  /// app's Settings page only once it has been asked, so that page could not
+  /// fix it either.
+  @objc public func requestLocationPermission(_ completion: @escaping (Bool) -> Void) {
+    switch locationManager.authorizationStatus {
+    case .notDetermined:
+      locationPermissionWaiters.append(completion)
+      locationManager.requestWhenInUseAuthorization()
+    case .authorizedWhenInUse, .authorizedAlways:
+      completion(true)
+    default:
+      completion(false)
+    }
+  }
+
+  /// Puts the permission question where the user can answer it.
+  ///
+  /// A location that was never asked has no switch in Settings yet, so it gets
+  /// the system prompt instead; anything already answered opens this app's
+  /// Settings page. False only if neither could be shown.
+  @objc public func openSettings() -> Bool {
+    if locationManager.authorizationStatus == .notDetermined {
+      locationManager.requestWhenInUseAuthorization()
+      return true
+    }
+    guard let url = URL(string: UIApplication.openSettingsURLString) else { return false }
+    UIApplication.shared.open(url)
+    return true
+  }
+
   // MARK: - Location
 
   @objc public func startGps() {
@@ -364,6 +403,13 @@ public final class IwayplusScannerImpl: NSObject,
 
   public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
     let status = manager.authorizationStatus
+    // Also delivered once when the manager is created, before anyone answered.
+    if status != .notDetermined, !locationPermissionWaiters.isEmpty {
+      let granted = status == .authorizedWhenInUse || status == .authorizedAlways
+      let waiters = locationPermissionWaiters
+      locationPermissionWaiters.removeAll()
+      waiters.forEach { $0(granted) }
+    }
     if startGpsAfterAuthorization,
        status == .authorizedWhenInUse || status == .authorizedAlways {
       startGpsAfterAuthorization = false

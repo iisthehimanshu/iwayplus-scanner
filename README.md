@@ -65,8 +65,11 @@ isn't happening.
 ```
 
 Without `NSBluetoothAlwaysUsageDescription`, iOS terminates the app the moment
-scanning starts. iOS raises its own prompts on first use; there is nothing to
-call from Dart. Scanning is foreground-only, so add no background modes.
+scanning starts. Without `NSLocationWhenInUseUsageDescription`, iOS silently
+ignores the location request, and the page can never locate the user.
+`requestScannerPermissions()` (or `autoRequestPermissions`) asks for location
+while the app is in use; Bluetooth is prompted by iOS itself. Scanning is
+foreground-only, so add no background modes.
 
 ## Usage
 
@@ -87,7 +90,7 @@ class _VenueMapScreenState extends State<VenueMapScreen> {
 
   // Grant before showing the map. Scanning against a denied adapter produces
   // no readings and no error the page can explain — it just never locates.
-  // Resolves true straight away on iOS, which shows its own prompts.
+  // On iOS this raises the location prompt, and the Bluetooth one with it.
   late final Future<bool> _granted = requestScannerPermissions();
 
   @override
@@ -142,7 +145,7 @@ Use the landmark's `polyId` for both landmark parameters, and URL-encode every v
 |---|---|---|
 | `url` | `String` | **Required.** The hosted page with its parameters. |
 | `config` | `ScannerConfig?` | Scanner tunables — batching window, scan restart interval, GPS interval. The defaults suit most venues. |
-| `autoRequestPermissions` | `bool` | Request Android permissions on first build. Default `true`. |
+| `autoRequestPermissions` | `bool` | Request Bluetooth and location permissions on first build (Android and iOS). Default `true`. |
 | `onPermissionResult` | `ValueChanged<bool>?` | Outcome of that request. |
 | `onClose` | `VoidCallback?` | The page asked to be dismissed. |
 | `onCommand` | `bool Function(Map<String, dynamic>)?` | Commands from the page the bridge does not recognise. Return `true` if handled. |
