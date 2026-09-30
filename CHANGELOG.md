@@ -1,4 +1,4 @@
-## Unreleased
+## 0.2.4
 
 * iOS: `requestScannerPermissions()` now asks for location while the app is in
   use, and resolves to the answer. It used to resolve `true` without asking,
