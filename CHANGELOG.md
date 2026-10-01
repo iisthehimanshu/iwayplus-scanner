@@ -1,4 +1,4 @@
-## Unreleased
+## 0.2.6
 
 * The page's spoken instructions are now voiced by the host app. An Android
   WebView has no speech engine, so navigation instructions were silent unless
