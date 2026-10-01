@@ -36,4 +36,15 @@
       android:name="android.hardware.camera"
       android:required="false" />
 
+  <!--
+    The page's spoken instructions are voiced by the device's text-to-speech
+    engine (a WebView has none of its own). From Android 11 an app cannot see
+    that engine without declaring the intent it binds to.
+  -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.TTS_SERVICE" />
+    </intent>
+  </queries>
+
 </manifest>

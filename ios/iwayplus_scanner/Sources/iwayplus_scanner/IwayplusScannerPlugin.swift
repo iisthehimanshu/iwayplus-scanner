@@ -93,6 +93,12 @@ public final class IwayplusScannerPlugin: NSObject, FlutterPlugin, FlutterStream
       impl.requestLocationPermission { granted in result(granted) }
     case "requestCameraPermission":
       requestCameraPermission(result)
+    case "speak":
+      impl.speak(call.arguments as? String ?? "{}")
+      result(nil)
+    case "stopSpeaking":
+      implStorage?.stopSpeaking()
+      result(nil)
     case "openSettings":
       result(impl.openSettings())
     default:
@@ -134,6 +140,7 @@ public final class IwayplusScannerPlugin: NSObject, FlutterPlugin, FlutterStream
   }
 
   public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
+    implStorage?.stopSpeaking()
     implStorage?.stopAll()
     implStorage?.onEvent = nil
     implStorage = nil

@@ -26,7 +26,37 @@ void main() {
     });
   });
 
+  group('screenReaderStatement', () {
+    test('tells the page the screen reader state', () {
+      expect(screenReaderStatement(true), contains('__setScreenReader(true);'));
+      expect(
+        screenReaderStatement(false),
+        contains('__setScreenReader(false);'),
+      );
+    });
+
+    test('guards against a page bootstrapped before the setter existed', () {
+      expect(
+        screenReaderStatement(true),
+        startsWith(
+          'window.__iwayplusScanner && '
+          'window.__iwayplusScanner.__setScreenReader &&',
+        ),
+      );
+    });
+  });
+
   group('bridgeBootstrap', () {
+    test('lets the page speak through the host and hear how it went', () {
+      expect(bridgeBootstrap, contains("var command = { cmd: 'speak' };"));
+      expect(bridgeBootstrap, contains("cmd: 'stopSpeaking'"));
+      expect(bridgeBootstrap, contains("new CustomEvent('iwayplusspeech'"));
+    });
+
+    test('starts with the screen reader state unknown', () {
+      expect(bridgeBootstrap, contains('screenReader: null,'));
+    });
+
     test('sends commands through the Flutter channel', () {
       expect(bridgeBootstrap, contains('window.IwayplusScannerHost'));
       expect(bridgeBootstrap, isNot(contains('ReactNativeWebView')));

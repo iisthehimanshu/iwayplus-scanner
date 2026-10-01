@@ -71,6 +71,19 @@ class IwayplusScanner {
   /// Stops every stream and resets the sequence counter.
   static Future<void> stopAll() => _methods.invokeMethod<void>('stopAll');
 
+  /// Speaks with the device's speech engine, replacing anything being spoken.
+  ///
+  /// [request] is `{id, text, language?, rate?, voices?}`. Progress comes back
+  /// as `speech` events carrying the same `id`: `start`, then one of `done`,
+  /// `stopped` or `error`. [IwayplusNavigation] calls this for the page, whose
+  /// WebView cannot speak on its own.
+  static Future<void> speak(Map<String, dynamic> request) =>
+      _methods.invokeMethod<void>('speak', jsonEncode(request));
+
+  /// Cuts off whatever [speak] started.
+  static Future<void> stopSpeaking() =>
+      _methods.invokeMethod<void>('stopSpeaking');
+
   /// Opens this app's page in system settings, where the permissions scanning
   /// needs can be granted after being denied.
   ///

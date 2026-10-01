@@ -1,3 +1,18 @@
+## Unreleased
+
+* The page's spoken instructions are now voiced by the host app. An Android
+  WebView has no speech engine, so navigation instructions were silent unless
+  TalkBack was on. The page sends `speak` / `stopSpeaking` over the bridge and
+  the plugin speaks with the device's text-to-speech engine (Android
+  `TextToSpeech`, iOS `AVSpeechSynthesizer`), reporting progress back as
+  `speech` events.
+* `IwayplusNavigation` tells the page whether TalkBack or VoiceOver is on, when
+  the page says it is ready and whenever it changes. The page uses that to
+  choose between a screen-reader announcement and speaking aloud.
+* New `IwayplusScanner.speak()` and `stopSpeaking()`. Android: the plugin
+  manifest declares the `TTS_SERVICE` query that Android 11+ needs to see the
+  speech engine. Hosts must rebuild to pick up the native changes.
+
 ## 0.2.5
 
 * The page's "Scan nearby QR" now works inside `IwayplusNavigation`. The

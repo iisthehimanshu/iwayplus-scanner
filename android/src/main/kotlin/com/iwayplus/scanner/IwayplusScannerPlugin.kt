@@ -45,6 +45,7 @@ class IwayplusScannerPlugin :
   private var gps: GpsScanner? = null
   private var heading: HeadingScanner? = null
   private var accel: AccelScanner? = null
+  private var speaker: Speaker? = null
 
   private var eventSink: EventChannel.EventSink? = null
   private var sequence = 0L
@@ -62,6 +63,7 @@ class IwayplusScannerPlugin :
     gps = GpsScanner(context, sink)
     heading = HeadingScanner(context, sink)
     accel = AccelScanner(context, sink)
+    speaker = Speaker(context, sink)
 
     methods = MethodChannel(binding.binaryMessenger, METHOD_CHANNEL)
     methods.setMethodCallHandler(this)
@@ -71,6 +73,8 @@ class IwayplusScannerPlugin :
 
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     stopAllStreams()
+    speaker?.shutdown()
+    speaker = null
     methods.setMethodCallHandler(null)
     events.setStreamHandler(null)
     ble = null
@@ -121,6 +125,8 @@ class IwayplusScannerPlugin :
         }
         "requestPermissions" -> requestPermissions(result)
         "requestCameraPermission" -> requestCameraPermission(result)
+        "speak" -> { speaker?.speak(call.arguments as? String); result.success(null) }
+        "stopSpeaking" -> { speaker?.stop(); result.success(null) }
         "openSettings" -> result.success(openAppSettings())
         else -> result.notImplemented()
       }

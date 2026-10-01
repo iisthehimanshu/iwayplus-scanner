@@ -5,7 +5,8 @@
 /// want the scan streams for their own purposes.
 library;
 
-export 'src/bridge_script.dart' show bridgeBootstrap, relayStatement;
+export 'src/bridge_script.dart'
+    show bridgeBootstrap, relayStatement, screenReaderStatement;
 export 'src/iwayplus_navigation.dart';
 export 'src/scanner.dart';
 export 'src/types.dart';

@@ -148,25 +148,26 @@ class IwayplusNavigationState extends State<IwayplusNavigation>
           )
         : const PlatformWebViewControllerCreationParams();
 
-    final controller = WebViewController.fromPlatformCreationParams(
-      params,
-      onPermissionRequest: _onWebPermissionRequest,
-    )
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..addJavaScriptChannel(
-        hostChannelName,
-        onMessageReceived: (message) => _handleCommand(message.message),
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          // Injected twice on purpose: onPageStarted is the earliest point
-          // available, and onPageFinished covers a WebView that discards
-          // scripts run before the new document exists. The script ignores a
-          // second run.
-          onPageStarted: (_) => _run(bridgeBootstrap),
-          onPageFinished: (_) => _run(bridgeBootstrap),
-        ),
-      );
+    final controller =
+        WebViewController.fromPlatformCreationParams(
+            params,
+            onPermissionRequest: _onWebPermissionRequest,
+          )
+          ..setJavaScriptMode(JavaScriptMode.unrestricted)
+          ..addJavaScriptChannel(
+            hostChannelName,
+            onMessageReceived: (message) => _handleCommand(message.message),
+          )
+          ..setNavigationDelegate(
+            NavigationDelegate(
+              // Injected twice on purpose: onPageStarted is the earliest point
+              // available, and onPageFinished covers a WebView that discards
+              // scripts run before the new document exists. The script ignores a
+              // second run.
+              onPageStarted: (_) => _run(bridgeBootstrap),
+              onPageFinished: (_) => _run(bridgeBootstrap),
+            ),
+          );
 
     final platform = controller.platform;
     if (platform is AndroidWebViewController) {
@@ -237,6 +238,7 @@ class IwayplusNavigationState extends State<IwayplusNavigation>
         final config = widget.config;
         if (config != null) unawaited(IwayplusScanner.configure(config));
         unawaited(IwayplusScanner.getState());
+        _reportScreenReader();
       case 'configure':
         final config = command['config'];
         if (config is Map) {
@@ -265,12 +267,30 @@ class IwayplusNavigationState extends State<IwayplusNavigation>
         if (!(widget.onCommand?.call(command) ?? false)) {
           unawaited(IwayplusScanner.openSettings());
         }
+      case 'speak':
+        unawaited(IwayplusScanner.speak(Map.of(command)..remove('cmd')));
+      case 'stopSpeaking':
+        unawaited(IwayplusScanner.stopSpeaking());
       case 'close':
         widget.onClose?.call();
       default:
         widget.onCommand?.call(command);
     }
   }
+
+  /// The page chooses between a screen-reader announcement and speaking
+  /// aloud, and only the host can see whether TalkBack or VoiceOver is on.
+  void _reportScreenReader() {
+    final on = WidgetsBinding
+        .instance
+        .platformDispatcher
+        .accessibilityFeatures
+        .accessibleNavigation;
+    unawaited(_run(screenReaderStatement(on)));
+  }
+
+  @override
+  void didChangeAccessibilityFeatures() => _reportScreenReader();
 
   List<ScannerStream> _streamsOf(Map<String, dynamic> command) => [
     for (final name in (command['streams'] as List? ?? const []))
@@ -303,6 +323,8 @@ class IwayplusNavigationState extends State<IwayplusNavigation>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_relay?.cancel());
+    // The page is going away; nothing is left to hear the rest of a sentence.
+    unawaited(IwayplusScanner.stopSpeaking());
     _running.clear();
     unawaited(IwayplusScanner.stopAll());
     super.dispose();

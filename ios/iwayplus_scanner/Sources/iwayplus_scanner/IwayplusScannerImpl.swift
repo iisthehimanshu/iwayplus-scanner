@@ -545,6 +545,21 @@ public final class IwayplusScannerImpl: NSObject,
     ])
   }
 
+  // ── speech ────────────────────────────────────────────────────────────────
+
+  private lazy var speaker = IwayplusSpeaker { [weak self] type, payloadJson in
+    self?.onEvent?(type, payloadJson)
+  }
+
+  /// Speaks a page instruction. See `IwayplusSpeaker` for the request shape.
+  @objc public func speak(_ requestJson: String) {
+    speaker.speak(requestJson)
+  }
+
+  @objc public func stopSpeaking() {
+    speaker.stop()
+  }
+
   private func emitState() {
     onEvent?("adapter", stateJson())
   }
