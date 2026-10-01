@@ -1,4 +1,4 @@
-## Unreleased
+## 0.2.5
 
 * The page's "Scan nearby QR" now works inside `IwayplusNavigation`. The
   WebView had no handler for the page's camera request, so Android denied it
