@@ -1,3 +1,16 @@
+## Unreleased
+
+* The page's "Scan nearby QR" now works inside `IwayplusNavigation`. The
+  WebView had no handler for the page's camera request, so Android denied it
+  and the page showed "NotAllowedError: Permission denied", and iOS showed
+  WebKit's own camera prompt every time the scanner opened. The view now asks
+  for the system camera permission the first time the page opens the camera,
+  and grants the page's request from then on: one prompt, once.
+* New `requestCameraPermission()`, for hosts that want to ask earlier.
+* Android: the plugin manifest declares `CAMERA`, with the camera feature
+  marked not required. iOS hosts need `NSCameraUsageDescription` in
+  Info.plist; without it the scanner stays unavailable.
+
 ## 0.2.4
 
 * iOS: `requestScannerPermissions()` now asks for location while the app is in

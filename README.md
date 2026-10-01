@@ -62,6 +62,8 @@ isn't happening.
 <string>Used to find nearby beacons so we can show your position indoors.</string>
 <key>NSLocationWhenInUseUsageDescription</key>
 <string>Used to show your position on the venue map.</string>
+<key>NSCameraUsageDescription</key>
+<string>Used to scan a nearby QR code and set your location.</string>
 ```
 
 Without `NSBluetoothAlwaysUsageDescription`, iOS terminates the app the moment
@@ -70,6 +72,10 @@ ignores the location request, and the page can never locate the user.
 `requestScannerPermissions()` (or `autoRequestPermissions`) asks for location
 while the app is in use; Bluetooth is prompted by iOS itself. Scanning is
 foreground-only, so add no background modes.
+
+The camera is only for the page's "Scan nearby QR". `IwayplusNavigation` asks
+for it the first time the page opens the scanner, on both platforms. Without
+`NSCameraUsageDescription` the scanner stays unavailable on iOS.
 
 ## Usage
 

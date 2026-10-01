@@ -26,4 +26,14 @@
       android:name="android.hardware.bluetooth_le"
       android:required="false" />
 
+  <!--
+    The page's "Scan nearby QR" opens the camera inside the WebView. Requested
+    at runtime the first time the page asks. Not required, so devices without
+    a camera can still install the host app.
+  -->
+  <uses-permission android:name="android.permission.CAMERA" />
+  <uses-feature
+      android:name="android.hardware.camera"
+      android:required="false" />
+
 </manifest>

@@ -52,6 +52,7 @@ class IwayplusScannerPlugin :
 
   private var activityBinding: ActivityPluginBinding? = null
   private var pendingPermissionResult: MethodChannel.Result? = null
+  private var pendingCameraResult: MethodChannel.Result? = null
 
   private val sink = ScannerSink { type, payloadJson -> send(type, payloadJson) }
 
@@ -119,6 +120,7 @@ class IwayplusScannerPlugin :
           result.success(state)
         }
         "requestPermissions" -> requestPermissions(result)
+        "requestCameraPermission" -> requestCameraPermission(result)
         "openSettings" -> result.success(openAppSettings())
         else -> result.notImplemented()
       }
@@ -240,11 +242,45 @@ class IwayplusScannerPlugin :
     activity.requestPermissions(missing.toTypedArray(), PERMISSION_REQUEST_CODE)
   }
 
+  /**
+   * The page's QR scanner opens the camera from inside the WebView, and a
+   * WebView can only hand the camera to a page when the app itself holds
+   * CAMERA. Asked on first use rather than up front with the scanning
+   * permissions: most sessions never scan a QR.
+   */
+  private fun requestCameraPermission(result: MethodChannel.Result) {
+    val activity: Activity? = activityBinding?.activity
+    if (activity == null) {
+      result.error(ERROR_CODE, "Permissions need a foreground activity", null)
+      return
+    }
+    if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) ==
+      PackageManager.PERMISSION_GRANTED
+    ) {
+      result.success(true)
+      return
+    }
+    if (pendingCameraResult != null) {
+      result.error(ERROR_CODE, "A permission request is already in progress", null)
+      return
+    }
+    pendingCameraResult = result
+    activity.requestPermissions(arrayOf(Manifest.permission.CAMERA), CAMERA_REQUEST_CODE)
+  }
+
   override fun onRequestPermissionsResult(
     requestCode: Int,
     permissions: Array<out String>,
     grantResults: IntArray,
   ): Boolean {
+    if (requestCode == CAMERA_REQUEST_CODE) {
+      val result = pendingCameraResult ?: return true
+      pendingCameraResult = null
+      result.success(
+        grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+      )
+      return true
+    }
     if (requestCode != PERMISSION_REQUEST_CODE) return false
     val result = pendingPermissionResult ?: return true
     pendingPermissionResult = null
@@ -290,5 +326,6 @@ class IwayplusScannerPlugin :
     const val PROTOCOL_VERSION = 1
     private const val ERROR_CODE = "IWAYPLUS_SCANNER_ERROR"
     private const val PERMISSION_REQUEST_CODE = 0x1A7
+    private const val CAMERA_REQUEST_CODE = 0x1A8
   }
 }

@@ -1,3 +1,4 @@
+import AVFoundation
 import Flutter
 import UIKit
 
@@ -90,10 +91,33 @@ public final class IwayplusScannerPlugin: NSObject, FlutterPlugin, FlutterStream
       // Reaching `impl` creates the Bluetooth manager, which raises the
       // Bluetooth prompt; location has to be asked for explicitly.
       impl.requestLocationPermission { granted in result(granted) }
+    case "requestCameraPermission":
+      requestCameraPermission(result)
     case "openSettings":
       result(impl.openSettings())
     default:
       result(FlutterMethodNotImplemented)
+    }
+  }
+
+  /// The page's QR scanner opens the camera inside the WebView. Asking here
+  /// shows the system camera prompt once; after that the WebView's own request
+  /// is granted without WebKit's per-page prompt.
+  private func requestCameraPermission(_ result: @escaping FlutterResult) {
+    switch AVCaptureDevice.authorizationStatus(for: .video) {
+    case .authorized:
+      result(true)
+    case .notDetermined:
+      // iOS terminates an app that asks for the camera without a usage string.
+      guard Bundle.main.object(forInfoDictionaryKey: "NSCameraUsageDescription") != nil else {
+        result(false)
+        return
+      }
+      AVCaptureDevice.requestAccess(for: .video) { granted in
+        DispatchQueue.main.async { result(granted) }
+      }
+    default:
+      result(false)
     }
   }
 

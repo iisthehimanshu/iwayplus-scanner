@@ -109,3 +109,17 @@ Future<bool> requestScannerPermissions() async {
       ) ??
       false;
 }
+
+/// Requests the camera, which the page's "Scan nearby QR" uses.
+///
+/// [IwayplusNavigation] calls this the first time the page opens the camera,
+/// so the user sees the system prompt once and never a per-page one. The
+/// host's Info.plist needs `NSCameraUsageDescription`; without it this
+/// resolves `false` on iOS.
+Future<bool> requestCameraPermission() async {
+  if (!Platform.isAndroid && !Platform.isIOS) return true;
+  return await IwayplusScanner._methods.invokeMethod<bool>(
+        'requestCameraPermission',
+      ) ??
+      false;
+}

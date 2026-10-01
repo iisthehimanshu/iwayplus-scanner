@@ -148,7 +148,10 @@ class IwayplusNavigationState extends State<IwayplusNavigation>
           )
         : const PlatformWebViewControllerCreationParams();
 
-    final controller = WebViewController.fromPlatformCreationParams(params)
+    final controller = WebViewController.fromPlatformCreationParams(
+      params,
+      onPermissionRequest: _onWebPermissionRequest,
+    )
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..addJavaScriptChannel(
         hostChannelName,
@@ -178,6 +181,35 @@ class IwayplusNavigationState extends State<IwayplusNavigation>
         );
     }
     return controller;
+  }
+
+  /// The page asks for the camera when the user taps "Scan nearby QR".
+  ///
+  /// With no handler here, Android's WebView denies the request (the page
+  /// shows "NotAllowedError: Permission denied") and WKWebView shows its own
+  /// prompt every time the camera opens. Asking for the app-level permission
+  /// and then granting gives one system prompt, once.
+  Future<void> _onWebPermissionRequest(WebViewPermissionRequest request) async {
+    final cameraOnly = request.types.every(
+      (type) => type == WebViewPermissionResourceType.camera,
+    );
+    if (!cameraOnly) {
+      // Anything else keeps the platform's behaviour without a handler:
+      // WebKit prompts, Android denies.
+      final platform = request.platform;
+      if (platform is WebKitWebViewPermissionRequest) {
+        await platform.prompt();
+      } else {
+        await request.deny();
+      }
+      return;
+    }
+    final granted = await requestCameraPermission().catchError((_) => false);
+    if (granted) {
+      await request.grant();
+    } else {
+      await request.deny();
+    }
   }
 
   Future<void> _run(String javascript) async {
