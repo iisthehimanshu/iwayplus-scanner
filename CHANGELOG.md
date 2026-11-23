@@ -1,3 +1,18 @@
+## 0.2.7
+
+* Android 13+: beacons are now found on Bluetooth stacks that accept the
+  advertised-name scan filter but never match it (seen on a Xiaomi Redmi Pad
+  running HyperOS 2). The scan also filters on the IwayPlus manufacturer ID
+  (`0x0505`), and the plugin checks the name itself so other devices sharing
+  that company ID are dropped.
+* Android: `powerState()` for location now reports the system Location switch
+  instead of the GNSS provider. Devices without a GPS chip, such as most Wi-Fi
+  tablets, used to report "off" permanently, which stopped the page from
+  scanning for beacons.
+* New `BleReading.packetHex`: the whole advertisement as uppercase hex.
+  Android sends the raw record with trailing padding removed. iOS rebuilds it
+  from the local name and manufacturer data. It is empty when unavailable.
+
 ## 0.2.6
 
 * The page's spoken instructions are now voiced by the host app. An Android
