@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.ActivityCompat
+import androidx.core.location.LocationManagerCompat
 import org.json.JSONObject
 
 /**
@@ -66,10 +67,17 @@ class GpsScanner(
     ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
       PackageManager.PERMISSION_GRANTED
 
+  /**
+   * The system Location switch, not the GNSS provider. BLE scanning needs the
+   * switch on and nothing more, and a device without a GNSS chip (most Wi-Fi
+   * tablets) has no GPS provider at all, so asking about GNSS here reported
+   * "off" forever and kept the page from scanning for beacons. Whether GNSS
+   * itself can deliver is [start]'s concern, which says so with NO_PROVIDER.
+   */
   fun powerState(): String = when {
     manager == null -> "unsupported"
     !hasPermission() -> "unauthorized"
-    isGpsEnabled() -> "on"
+    LocationManagerCompat.isLocationEnabled(manager) -> "on"
     else -> "off"
   }
 

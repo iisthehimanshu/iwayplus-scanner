@@ -252,7 +252,31 @@ public final class IwayplusScannerImpl: NSObject,
       "rssi": RSSI.intValue,
       "timestamp": Int(Date().timeIntervalSince1970 * 1000),
       "manufacturerHex": manufacturerHex,
+      "packetHex": Self.packetHex(advertisementData),
     ])
+  }
+
+  /// The advertisement as transmitted, uppercase hex (e.g. `0B09…0EFF0505…`).
+  ///
+  /// CoreBluetooth never exposes the raw bytes, so they are rebuilt from the
+  /// two fields IwayPlus beacons send, in on-air order: complete local name
+  /// (AD type 0x09), then manufacturer data (0xFF) including the company ID.
+  /// For those beacons this equals Android's raw `ScanRecord` bytes.
+  static func packetHex(_ advertisementData: [String: Any]) -> String {
+    var packet = Data()
+    if let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String,
+       let bytes = name.data(using: .utf8), !bytes.isEmpty, bytes.count < 255 {
+      packet.append(UInt8(bytes.count + 1))
+      packet.append(0x09)
+      packet.append(bytes)
+    }
+    if let data = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
+       !data.isEmpty, data.count < 255 {
+      packet.append(UInt8(data.count + 1))
+      packet.append(0xFF)
+      packet.append(data)
+    }
+    return packet.map { String(format: "%02X", $0) }.joined()
   }
 
   /// Advertised-name prefix every IwayPlus beacon carries.

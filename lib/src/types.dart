@@ -174,6 +174,7 @@ class BleReading {
     required this.rssi,
     required this.timestamp,
     required this.manufacturerHex,
+    this.packetHex = '',
   });
 
   factory BleReading.fromJson(Map<String, dynamic> json) => BleReading(
@@ -182,6 +183,7 @@ class BleReading {
     rssi: (json['rssi'] as num?)?.toInt() ?? 0,
     timestamp: (json['timestamp'] as num?)?.toInt() ?? 0,
     manufacturerHex: json['manufacturerHex'] as String? ?? '',
+    packetHex: json['packetHex'] as String? ?? '',
   );
 
   /// Android: MAC address. iOS: the CoreBluetooth peripheral UUID.
@@ -192,6 +194,11 @@ class BleReading {
 
   /// Manufacturer-specific data, uppercase hex; empty when absent.
   final String manufacturerHex;
+
+  /// The whole advertisement as transmitted (AD structures, e.g.
+  /// `0B09…0EFF0505…`), uppercase hex; empty when unavailable. Android sends
+  /// the raw record; iOS rebuilds it from the local name and manufacturer data.
+  final String packetHex;
 }
 
 /// A flush window's worth of advertisements.

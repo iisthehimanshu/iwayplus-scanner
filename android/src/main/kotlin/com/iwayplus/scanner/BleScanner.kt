@@ -127,7 +127,13 @@ class BleScanner(
           dropped++
           return
         }
-        buffer.add(readingOf(result, nameOf(result)))
+        val name = nameOf(result)
+        // The manufacturer-ID filter in [scanFilters] also passes non-IwayPlus
+        // devices that share the company ID; the name check drops them.
+        if (Build.VERSION.SDK_INT >= 33 && !name.startsWith(IWAYPLUS_NAME_PREFIX, ignoreCase = true)) {
+          return
+        }
+        buffer.add(readingOf(result, name))
       }
 
       override fun onScanFailed(errorCode: Int) {
@@ -170,7 +176,7 @@ class BleScanner(
     if (Build.VERSION.SDK_INT < 33) return emptyList()
     val prefix = IWAYPLUS_NAME_PREFIX.toByteArray(Charsets.US_ASCII)
     val caseInsensitiveMask = ByteArray(prefix.size) { ASCII_CASE_MASK }
-    return listOf(
+    val byName = listOf(
       ScanRecord.DATA_TYPE_LOCAL_NAME_COMPLETE,
       ScanRecord.DATA_TYPE_LOCAL_NAME_SHORT,
     ).map { type ->
@@ -178,6 +184,16 @@ class BleScanner(
         .setAdvertisingDataTypeWithData(type, prefix, caseInsensitiveMask)
         .build()
     }
+    // Filters are OR'ed. Some Bluetooth stacks accept the AD-type filters above
+    // but never match them (Xiaomi Redmi Pad, SM7675 / HyperOS 2: zero results
+    // while unfiltered scans saw the beacons), whereas manufacturer-ID filters
+    // are supported by every controller with offloaded filtering. Staying
+    // filtered rather than scanning unfiltered matters: Android pauses
+    // unfiltered scans while the screen is off.
+    val byManufacturer = ScanFilter.Builder()
+      .setManufacturerData(IWAYPLUS_MANUFACTURER_ID, ByteArray(0))
+      .build()
+    return byName + byManufacturer
   }
 
   @SuppressLint("MissingPermission")
@@ -215,6 +231,21 @@ class BleScanner(
       .put("rssi", result.rssi)
       .put("timestamp", System.currentTimeMillis())
       .put("manufacturerHex", manufacturerHex)
+      .put("packetHex", packetHexOf(record?.bytes))
+  }
+
+  /// The advertisement exactly as transmitted (AD structures back to back,
+  /// e.g. `0B09…0EFF0505…`), minus the zero padding Android appends to fill
+  /// the fixed-size record. Uppercase hex, `""` when there is no record.
+  private fun packetHexOf(bytes: ByteArray?): String {
+    if (bytes == null) return ""
+    var end = 0
+    while (end < bytes.size) {
+      val length = bytes[end].toInt() and 0xFF
+      if (length == 0) break
+      end += 1 + length
+    }
+    return toHex(bytes.copyOf(minOf(end, bytes.size)))
   }
 
   private fun startTimers() {
@@ -277,6 +308,9 @@ class BleScanner(
 
     /** Advertised-name prefix every IwayPlus beacon carries. */
     const val IWAYPLUS_NAME_PREFIX = "IW"
+
+    /** Company ID in the manufacturer data IwayPlus beacons advertise. */
+    const val IWAYPLUS_MANUFACTURER_ID = 0x0505
 
     /** Clears bit 5, which is the only difference between ASCII upper and lower case. */
     const val ASCII_CASE_MASK: Byte = 0xDF.toByte()
