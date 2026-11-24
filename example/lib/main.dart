@@ -22,6 +22,7 @@ import 'dart:async';
 import 'dart:math' show sqrt;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:iwayplus_scanner/iwayplus_scanner.dart';
 
 const _apiKey = String.fromEnvironment('IWAYPLUS_API_KEY');
@@ -86,6 +87,7 @@ class _HomeState extends State<_Home> {
                   for (final (index, name) in const [
                     (0, 'native'),
                     (1, 'bridge'),
+                    (2, 'app'),
                   ])
                     Expanded(
                       child: Padding(
@@ -113,7 +115,11 @@ class _HomeState extends State<_Home> {
             // Only one tab is alive at a time, like the React Native test app:
             // leaving the bridge tab disposes the WebView, which stops scanning.
             Expanded(
-              child: _tab == 0 ? const _NativePanel() : const _BridgePanel(),
+              child: switch (_tab) {
+                0 => const _NativePanel(),
+                1 => const _BridgePanel(),
+                _ => const _AppScanPanel(),
+              },
             ),
           ],
         ),
@@ -378,6 +384,154 @@ class _NativePanelState extends State<_NativePanel> {
           ),
           onPressed: _toggle,
           child: Text(_scanning ? 'stop scanning' : 'start scanning'),
+        ),
+      ],
+    );
+  }
+}
+
+// ── App scanning ────────────────────────────────────────────────────────────
+
+/// The app's own scanning (`ScanMode.persistent`), apart from the page's.
+///
+/// To check the swipe keep-alive: start here, swipe the app out of recents,
+/// and watch `adb logcat -s IwayplusAppScan IwayplusScannerHub`, or the
+/// notification, which goes when scanning ends.
+class _AppScanPanel extends StatefulWidget {
+  const _AppScanPanel();
+
+  @override
+  State<_AppScanPanel> createState() => _AppScanPanelState();
+}
+
+class _AppScanPanelState extends State<_AppScanPanel> {
+  StreamSubscription<ScannerEnvelope>? _subscription;
+
+  /// Null keeps scanning until stopped.
+  Duration? _keepAlive = const Duration(minutes: 1);
+  bool? _scanning;
+  int _batches = 0;
+  int _readings = 0;
+  int _gpsFixes = 0;
+  int _seq = 0;
+  String? _status;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = IwayplusScanner.appEvents.listen(_onEvent);
+    _refresh();
+  }
+
+  void _onEvent(ScannerEnvelope event) {
+    setState(() {
+      _seq = event.sequence;
+      switch (event.type) {
+        case 'ble':
+          _batches++;
+          _readings += BlePayload.fromJson(event.payload).readings.length;
+        case 'gps':
+          _gpsFixes++;
+        case 'error':
+          final error = ErrorPayload.fromJson(event.payload);
+          _status = '${error.code}: ${error.message}';
+      }
+    });
+  }
+
+  Future<void> _refresh() async {
+    final scanning = await IwayplusScanner.isAppScanning();
+    if (mounted) setState(() => _scanning = scanning);
+  }
+
+  Future<void> _run(Future<void> Function() action, String done) async {
+    try {
+      await action();
+      setState(() => _status = done);
+    } on PlatformException catch (error) {
+      setState(() => _status = '${error.code}: ${error.message}');
+    } catch (error) {
+      setState(() => _status = '$error');
+    }
+    await _refresh();
+  }
+
+  Future<void> _start() => _run(() async {
+    if (!await requestScannerPermissions()) throw 'Permissions denied';
+    await IwayplusScanner.setMode(
+      ScanMode.persistent(
+        keepAliveAfterSwipe: _keepAlive,
+        notification: const ScanNotification(
+          title: 'iwayplus_scanner example',
+          text: 'Scanning beacons and GPS',
+        ),
+      ),
+    );
+    setState(() => _batches = _readings = _gpsFixes = _seq = 0);
+    await IwayplusScanner.startAppScanning([
+      ScannerStream.ble,
+      ScannerStream.gps,
+    ]);
+  }, 'started');
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const choices = <(String, Duration?)>[
+      ('0 s', Duration.zero),
+      ('1 min', Duration(minutes: 1)),
+      ('5 min', Duration(minutes: 5)),
+      ('forever', null),
+    ];
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      children: [
+        const _Section('keep alive after swipe'),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final (label, value) in choices)
+              ChoiceChip(
+                label: Text(label),
+                selected: _keepAlive == value,
+                onSelected: (_) => setState(() => _keepAlive = value),
+              ),
+          ],
+        ),
+        const _Section('app scanning'),
+        _Row('running', switch (_scanning) {
+          null => '-',
+          true => 'yes',
+          false => 'no',
+        }),
+        _Row('ble batches', '$_batches'),
+        _Row('ble readings', '$_readings'),
+        _Row('gps fixes', '$_gpsFixes'),
+        _Row('seq', '$_seq'),
+        _Row('status', _status ?? '-'),
+        const SizedBox(height: 28),
+        FilledButton(
+          onPressed: _start,
+          child: const Text('persistent mode + start ble, gps'),
+        ),
+        const SizedBox(height: 12),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFFB91C1C)),
+          onPressed: () => _run(IwayplusScanner.stopAppScanning, 'stopped'),
+          child: const Text('stop app scanning'),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton(
+          onPressed: () => _run(
+            () => IwayplusScanner.setMode(const ScanMode.webOnly()),
+            'web only',
+          ),
+          child: const Text('web only mode'),
         ),
       ],
     );

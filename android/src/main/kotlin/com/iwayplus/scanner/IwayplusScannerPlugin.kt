@@ -2,6 +2,7 @@ package com.iwayplus.scanner
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -23,12 +24,16 @@ import org.json.JSONObject
  * The Flutter surface of the scanner.
  *
  * The Flutter counterpart of react-native-scanner's `IwayplusScannerModule`:
- * the scanner cores in this directory are shared with that package verbatim,
- * and this class only adds the envelope and the channels. Every event crosses
- * as a JSON string wrapped in an envelope with a protocol version and a
- * monotonic sequence number — the widget forwards those strings into the
- * WebView without parsing them, and the page uses sequence gaps to notice a
- * stalled bridge.
+ * the scanner cores in this directory are shared with that package verbatim.
+ * Every event crosses as a JSON string wrapped in an envelope with a protocol
+ * version and a monotonic sequence number — the widget forwards those strings
+ * into the WebView without parsing them, and the page uses sequence gaps to
+ * notice a stalled bridge.
+ *
+ * The cores themselves belong to [ScannerHub], not to this engine. This engine
+ * is one claimant there — the page's — and the app's own scanning
+ * ([AppScanSession]) is another, so the two can start and stop independently
+ * and the app's scanning can outlive the engine.
  */
 class IwayplusScannerPlugin :
   FlutterPlugin,
@@ -39,17 +44,22 @@ class IwayplusScannerPlugin :
 
   private lateinit var methods: MethodChannel
   private lateinit var events: EventChannel
+  private lateinit var appEvents: EventChannel
   private val mainHandler = Handler(Looper.getMainLooper())
 
-  private var ble: BleScanner? = null
-  private var gps: GpsScanner? = null
-  private var heading: HeadingScanner? = null
-  private var accel: AccelScanner? = null
+  private var context: Context? = null
+  private var hub: ScannerHub? = null
   private var speaker: Speaker? = null
 
   private var eventSink: EventChannel.EventSink? = null
   private var sequence = 0L
   private var announced = false
+
+  /** The page's claimant: what it starts, and where its streams' events go. */
+  private val page = ScanClaimant { type, payloadJson -> send(type, payloadJson) }
+
+  /** Set while Dart listens to `app_events`. */
+  private var appListener: ((String) -> Unit)? = null
 
   private var activityBinding: ActivityPluginBinding? = null
   private var pendingPermissionResult: MethodChannel.Result? = null
@@ -59,59 +69,60 @@ class IwayplusScannerPlugin :
 
   override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     val context = binding.applicationContext
-    ble = BleScanner(context, sink)
-    gps = GpsScanner(context, sink)
-    heading = HeadingScanner(context, sink)
-    accel = AccelScanner(context, sink)
+    this.context = context
+    hub = ScannerHub.get(context)
     speaker = Speaker(context, sink)
 
     methods = MethodChannel(binding.binaryMessenger, METHOD_CHANNEL)
     methods.setMethodCallHandler(this)
     events = EventChannel(binding.binaryMessenger, EVENT_CHANNEL)
     events.setStreamHandler(this)
+    appEvents = EventChannel(binding.binaryMessenger, APP_EVENT_CHANNEL)
+    appEvents.setStreamHandler(AppEventsHandler())
   }
 
+  /**
+   * Ends the page's scanning, and only the page's. The app's session is not
+   * tied to an engine: when the task is swiped away this engine goes, and the
+   * session is exactly what must keep running.
+   */
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-    stopAllStreams()
+    hub?.releaseAll(page)
+    appListener?.let { AppScanSession.removeListener(it) }
+    appListener = null
     speaker?.shutdown()
     speaker = null
     methods.setMethodCallHandler(null)
     events.setStreamHandler(null)
-    ble = null
-    gps = null
-    heading = null
-    accel = null
+    appEvents.setStreamHandler(null)
+    hub = null
+    context = null
   }
 
   override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-    val ble = ble
-    val gps = gps
-    val heading = heading
-    val accel = accel
-    if (ble == null || gps == null || heading == null || accel == null) {
+    val hub = hub
+    val context = context
+    if (hub == null || context == null) {
       result.error(ERROR_CODE, "Scanner is detached from the engine", null)
       return
     }
     try {
       when (call.method) {
         "configure" -> {
-          val config = ScannerConfig.fromJson(call.arguments as? String)
-          ble.configure(config)
-          gps.configure(config)
-          heading.configure(config)
-          accel.configure(config)
+          hub.configure(ScannerConfig.fromJson(call.arguments as? String))
           result.success(null)
         }
-        "startBle" -> { announceOnce(); ble.start(); result.success(null) }
-        "stopBle" -> { ble.stop(); result.success(null) }
-        "startGps" -> { announceOnce(); gps.start(); result.success(null) }
-        "stopGps" -> { gps.stop(); result.success(null) }
-        "startHeading" -> { announceOnce(); heading.start(); result.success(null) }
-        "stopHeading" -> { heading.stop(); result.success(null) }
-        "startAccel" -> { announceOnce(); accel.start(); result.success(null) }
-        "stopAccel" -> { accel.stop(); result.success(null) }
+        "startBle" -> startForPage(ScanStream.BLE, result)
+        "stopBle" -> stopForPage(ScanStream.BLE, result)
+        "startGps" -> startForPage(ScanStream.GPS, result)
+        "stopGps" -> stopForPage(ScanStream.GPS, result)
+        "startHeading" -> startForPage(ScanStream.HEADING, result)
+        "stopHeading" -> stopForPage(ScanStream.HEADING, result)
+        "startAccel" -> startForPage(ScanStream.ACCEL, result)
+        "stopAccel" -> stopForPage(ScanStream.ACCEL, result)
         "stopAll" -> {
-          stopAllStreams()
+          // The page's streams only: the app's session keeps whatever it holds.
+          hub.releaseAll(page)
           // The page reads a sequence reset as "this is a fresh session", which
           // is what a full stop is.
           sequence = 0
@@ -123,6 +134,24 @@ class IwayplusScannerPlugin :
           send("adapter", state)
           result.success(state)
         }
+        "setScanMode" -> {
+          AppScanSession.setMode(context, call.arguments as? String)
+          result.success(null)
+        }
+        "startAppScanning" -> {
+          val names = call.arguments as? List<*> ?: emptyList<Any?>()
+          val streams = names.map {
+            ScanStream.byWire(it)
+              ?: throw ScanStartException("INVALID_STREAMS", "Unknown stream \"$it\"")
+          }
+          AppScanSession.start(context, streams)
+          result.success(null)
+        }
+        "stopAppScanning" -> {
+          AppScanSession.stop(context)
+          result.success(null)
+        }
+        "isAppScanning" -> result.success(AppScanSession.isScanning(context))
         "requestPermissions" -> requestPermissions(result)
         "requestCameraPermission" -> requestCameraPermission(result)
         "speak" -> { speaker?.speak(call.arguments as? String); result.success(null) }
@@ -130,9 +159,24 @@ class IwayplusScannerPlugin :
         "openSettings" -> result.success(openAppSettings())
         else -> result.notImplemented()
       }
+    } catch (error: ScanStartException) {
+      result.error(error.code, error.message, null)
+    } catch (error: IllegalArgumentException) {
+      result.error("INVALID_ARGUMENT", error.message, null)
     } catch (error: Exception) {
       result.error(ERROR_CODE, error.message, null)
     }
+  }
+
+  private fun startForPage(stream: ScanStream, result: MethodChannel.Result) {
+    announceOnce()
+    hub?.claim(page, listOf(stream))
+    result.success(null)
+  }
+
+  private fun stopForPage(stream: ScanStream, result: MethodChannel.Result) {
+    hub?.release(page, listOf(stream))
+    result.success(null)
   }
 
   // ── events ────────────────────────────────────────────────────────────────
@@ -143,6 +187,21 @@ class IwayplusScannerPlugin :
 
   override fun onCancel(arguments: Any?) {
     eventSink = null
+  }
+
+  /** The app's session's events, for Dart's `IwayplusScanner.appEvents`. */
+  private inner class AppEventsHandler : EventChannel.StreamHandler {
+    override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+      appListener?.let { AppScanSession.removeListener(it) }
+      val listener: (String) -> Unit = { envelope -> events.success(envelope) }
+      appListener = listener
+      AppScanSession.addListener(listener)
+    }
+
+    override fun onCancel(arguments: Any?) {
+      appListener?.let { AppScanSession.removeListener(it) }
+      appListener = null
+    }
   }
 
   /**
@@ -183,31 +242,28 @@ class IwayplusScannerPlugin :
     send("adapter", stateJson())
   }
 
-  private fun stopAllStreams() {
-    ble?.stop()
-    gps?.stop()
-    heading?.stop()
-    accel?.stop()
+  /** What the radios are doing, whoever asked for it. */
+  private fun stateJson(): String {
+    val hub = hub
+    return JSONObject()
+      .put("bluetooth", hub?.ble?.powerState() ?: "unknown")
+      .put("location", hub?.gps?.powerState() ?: "unknown")
+      .put(
+        "permissions",
+        JSONObject()
+          .put("bluetooth", hub?.ble?.hasPermission() ?: false)
+          .put("location", hub?.gps?.hasPermission() ?: false),
+      )
+      .put(
+        "scanning",
+        JSONObject()
+          .put("ble", hub?.ble?.isScanning ?: false)
+          .put("gps", hub?.gps?.isScanning ?: false)
+          .put("heading", hub?.heading?.isScanning ?: false)
+          .put("accel", hub?.accel?.isScanning ?: false),
+      )
+      .toString()
   }
-
-  private fun stateJson(): String = JSONObject()
-    .put("bluetooth", ble?.powerState() ?: "unknown")
-    .put("location", gps?.powerState() ?: "unknown")
-    .put(
-      "permissions",
-      JSONObject()
-        .put("bluetooth", ble?.hasPermission() ?: false)
-        .put("location", gps?.hasPermission() ?: false),
-    )
-    .put(
-      "scanning",
-      JSONObject()
-        .put("ble", ble?.isScanning ?: false)
-        .put("gps", gps?.isScanning ?: false)
-        .put("heading", heading?.isScanning ?: false)
-        .put("accel", accel?.isScanning ?: false),
-    )
-    .toString()
 
   // ── permissions ───────────────────────────────────────────────────────────
 
@@ -313,12 +369,16 @@ class IwayplusScannerPlugin :
   override fun onAttachedToActivity(binding: ActivityPluginBinding) {
     activityBinding = binding
     binding.addRequestPermissionsResultListener(this)
+    // The app is open again: a swipe countdown no longer applies.
+    AppScanSession.onAppVisible(binding.activity)
+  }
+
+  override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+    activityBinding = binding
+    binding.addRequestPermissionsResultListener(this)
   }
 
   override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
-
-  override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) =
-    onAttachedToActivity(binding)
 
   override fun onDetachedFromActivity() {
     activityBinding?.removeRequestPermissionsResultListener(this)
@@ -328,7 +388,8 @@ class IwayplusScannerPlugin :
   companion object {
     const val METHOD_CHANNEL = "iwayplus_scanner"
     const val EVENT_CHANNEL = "iwayplus_scanner/events"
-    const val MODULE_VERSION = "0.1.0"
+    const val APP_EVENT_CHANNEL = "iwayplus_scanner/app_events"
+    const val MODULE_VERSION = "0.3.0"
     const val PROTOCOL_VERSION = 1
     private const val ERROR_CODE = "IWAYPLUS_SCANNER_ERROR"
     private const val PERMISSION_REQUEST_CODE = 0x1A7

@@ -167,6 +167,81 @@ final subscription = IwayplusScanner.events.listen((event) {
 await IwayplusScanner.start([ScannerStream.ble, ScannerStream.gps, ScannerStream.heading]);
 ```
 
+## App scanning in the background (Android)
+
+By default (`ScanMode.webOnly()`) scanning exists only while the page asks for
+it. `ScanMode.persistent` lets the app also scan BLE and GPS **on its own**: on
+any screen of the app, with the app in recents, and for a set time after the
+user swipes it out of recents.
+
+```dart
+await IwayplusScanner.setMode(const ScanMode.persistent(
+  keepAliveAfterSwipe: Duration(minutes: 30), // null: until stopped; zero: ends with the swipe
+  notification: ScanNotification(title: 'Empower', text: 'Finding your location'),
+));
+await IwayplusScanner.startAppScanning([ScannerStream.ble, ScannerStream.gps]);
+
+// Later, from anywhere in the app:
+await IwayplusScanner.stopAppScanning();
+```
+
+The app and the page are **separate**: each starts and stops only its own
+streams, and a radio runs while either of them wants it. `stopAppScanning`
+never stops the page's scanning, and the page stopping, the map closing or the
+app pausing never stops the app's. Each side gets only the streams it started,
+the page over the WebView relay and the app over `IwayplusScanner.appEvents`,
+each with its own unbroken `seq`.
+
+How it behaves:
+
+- **Swiped out of recents:** the page goes with the task; the app's scanning
+  continues for `keepAliveAfterSwipe` and then stops. Reopening the app before
+  then cancels the countdown, and the next swipe starts a fresh one.
+- **Process killed by Android:** the service is sticky. When Android restarts
+  it, the session resumes unless the swipe deadline has passed. On Android 14+
+  a location service may only restart from the background with background
+  location granted; without it the session resumes when the app is next opened.
+- **Force-stopped**, or killed by a vendor task killer that behaves like one:
+  nothing runs until the user opens the app again, which resumes the session.
+- **Deep sleep:** the countdown is noticed at the next reading, so it can run
+  slightly over.
+- Readings the app's scanning gathers while no app UI is running are dropped
+  for now.
+- iOS: `ScanMode.persistent` and `startAppScanning` throw `UnsupportedError`.
+
+### What the host app declares
+
+The plugin does **not** merge the service into your manifest, so an app that
+never uses app scanning carries no foreground service for Play to ask about.
+To use it, add to `android/app/src/main/AndroidManifest.xml`:
+
+```xml
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+<!-- Android 13+: without it the notification is hidden, though scanning still runs. -->
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+<application …>
+  <service
+      android:name="com.iwayplus.scanner.ScannerService"
+      android:exported="false"
+      android:foregroundServiceType="location" />
+</application>
+```
+
+Leave `android:stopWithTask` unset: the swipe is detected through it.
+
+Then:
+
+- Grant location (and Bluetooth) before `startAppScanning`, and call it with the
+  app on screen — Android only lets a location foreground service start from
+  there. Errors arrive as a `PlatformException` with code `WEB_ONLY_MODE`,
+  `INVALID_STREAMS`, `SERVICE_NOT_DECLARED`, `PERMISSION_DENIED` or
+  `FOREGROUND_NOT_ALLOWED`.
+- Declare the foreground service (type `location`) in the Play Console.
+- On Xiaomi, Samsung, OnePlus and similar, the vendor's battery settings can
+  still end the process; users may need to allow the app to run unrestricted.
+
 ## Protocol
 
 Identical to `@iwayplus/react-native-scanner` — the page cannot tell which host
@@ -189,9 +264,10 @@ page checks for an existing bridge before waiting up to 5 seconds for the
 
 ## Behaviour notes
 
-- Scanning stops when the app goes to the background and resumes when it
-  returns. The WebView's JavaScript is suspended in the background, so readings
-  gathered there would have nowhere to go.
+- The page's scanning stops when the app goes to the background and resumes
+  when it returns. The WebView's JavaScript is suspended in the background, so
+  readings gathered there would have nowhere to go. The app's own scanning (see
+  above) is not affected.
 - Advertisements are batched (250 ms by default) rather than sent one by one.
 - On iOS the Bluetooth manager is created on first use, so linking the plugin
   does not raise the Bluetooth prompt at app launch.
@@ -220,6 +296,9 @@ diff -q "$RN/ios/IwayplusScannerImpl.swift" ios/iwayplus_scanner/Sources/iwayplu
 
 `lib/src/bridge_script.dart` and `lib/src/types.dart` are ports rather than
 copies: they must behave the same as `src/bridgeScript.ts` and `src/types.ts`.
+
+`ScannerHub.kt`, `AppScanSession.kt` and `ScannerService.kt` exist only here
+for now: app scanning has not been ported to `react-native-scanner` yet.
 
 One consequence of the shared package name: a single app cannot link both this
 plugin and `react-native-scanner`.

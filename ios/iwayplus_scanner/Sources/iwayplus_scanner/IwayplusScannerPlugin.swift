@@ -12,7 +12,7 @@ import UIKit
 /// keeps its state and its timers. That is why this wrapper needs none of the
 /// main-queue hopping the React Native shim does.
 public final class IwayplusScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
-  static let moduleVersion = "0.1.0"
+  static let moduleVersion = "0.3.0"
   static let protocolVersion = 1
 
   /// Created on first use rather than at registration: constructing

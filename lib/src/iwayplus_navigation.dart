@@ -17,7 +17,9 @@ import 'types.dart';
 /// loading, and means the host never has to guess what positioning needs.
 ///
 /// Showing this widget opens navigation and removing it ends it — removal
-/// stops every stream. Give it bounded constraints: like any WebView it cannot
+/// stops every stream the page started. The app's own scanning
+/// (`IwayplusScanner.startAppScanning`) is separate and carries on, and none
+/// of this widget's pausing or stopping touches it. Give it bounded constraints: like any WebView it cannot
 /// size itself inside a `Column` or a scroll view.
 ///
 /// Reach [IwayplusNavigationState.reload] and
@@ -87,7 +89,7 @@ class IwayplusNavigationState extends State<IwayplusNavigation>
   /// Reloads the page. Scanning state is kept; the page re-requests streams.
   Future<void> reload() => _controller.reload();
 
-  /// Stops every stream without closing the page.
+  /// Stops every stream the page started, without closing the page.
   ///
   /// Forgets what was running, so nothing resumes on its own. Use
   /// [pauseScanning] when the page is only being hidden.

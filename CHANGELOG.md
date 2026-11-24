@@ -1,3 +1,24 @@
+## 0.3.0
+
+* Android: the app can scan BLE and GPS on its own, outside the navigation
+  page. `IwayplusScanner.setMode(ScanMode.persistent(...))` and
+  `startAppScanning([ble, gps])` keep scanning on every screen, with the app in
+  recents, and for `keepAliveAfterSwipe` after the app is swiped out of
+  recents (null: until stopped). Reopening the app cancels that countdown.
+  `stopAppScanning()` ends it. Kept alive by a foreground service of type
+  `location` that the host app declares; see the README.
+* The page and the app are independent claimants. The page's `stop`,
+  `stopAll`, pausing and disposing `IwayplusNavigation`, and the engine
+  detaching now stop only the page's streams, and stopping the app's scanning
+  never stops the page's. Each receives only the streams it started:
+  the page over the WebView relay as before, the app over the new
+  `IwayplusScanner.appEvents` / `appRawEvents`.
+* `ScanMode.webOnly()`, the default, behaves exactly like 0.2.7.
+* iOS: unchanged. `ScanMode.persistent` and `startAppScanning` throw
+  `UnsupportedError`.
+* The `hello` event's `moduleVersion` now reports the real version; it was
+  stuck at `0.1.0`.
+
 ## 0.2.7
 
 * Android 13+: beacons are now found on Bluetooth stacks that accept the

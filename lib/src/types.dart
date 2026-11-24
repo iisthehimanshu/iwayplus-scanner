@@ -400,3 +400,99 @@ class ErrorPayload {
   final String code;
   final String message;
 }
+
+/// Whether the app scans on its own, outside the navigation page. Android only.
+///
+/// Set with `IwayplusScanner.setMode`. The mode is kept across launches until
+/// it is set again.
+sealed class ScanMode {
+  const ScanMode();
+
+  /// Scanning exists only while the page asks for it: the default, and how
+  /// every release before 0.3.0 behaved. Switching to it ends any app scanning
+  /// and leaves the page's scanning alone.
+  const factory ScanMode.webOnly() = WebOnlyScanMode;
+
+  /// The app may also scan BLE and GPS on its own, with
+  /// `IwayplusScanner.startAppScanning`: on any screen, with the app in
+  /// recents, and for [PersistentScanMode.keepAliveAfterSwipe] after the user
+  /// swipes it out of recents.
+  const factory ScanMode.persistent({
+    Duration? keepAliveAfterSwipe,
+    ScanNotification notification,
+  }) = PersistentScanMode;
+
+  Map<String, dynamic> toJson();
+}
+
+final class WebOnlyScanMode extends ScanMode {
+  const WebOnlyScanMode();
+
+  @override
+  Map<String, dynamic> toJson() => {'mode': 'webOnly'};
+}
+
+final class PersistentScanMode extends ScanMode {
+  const PersistentScanMode({
+    this.keepAliveAfterSwipe,
+    this.notification = const ScanNotification(),
+  });
+
+  /// How long app scanning continues once the app is swiped out of recents.
+  /// Null keeps it running until the app calls `stopAppScanning`;
+  /// [Duration.zero] ends it with the swipe. Reopening the app before it runs
+  /// out cancels the countdown, and the next swipe starts a fresh one.
+  ///
+  /// Counted on the device's clock while it is awake. In deep sleep the end
+  /// is noticed at the next reading, so it can run a little over.
+  final Duration? keepAliveAfterSwipe;
+
+  /// The notification Android shows while app scanning runs. It cannot be
+  /// hidden: it is what lets scanning outlive the app's screens.
+  final ScanNotification notification;
+
+  @override
+  Map<String, dynamic> toJson() {
+    final keepAlive = keepAliveAfterSwipe;
+    if (keepAlive != null && keepAlive.isNegative) {
+      throw ArgumentError.value(
+        keepAlive,
+        'keepAliveAfterSwipe',
+        'must not be negative',
+      );
+    }
+    return {
+      'mode': 'persistent',
+      'keepAliveAfterSwipeMs': keepAlive?.inMilliseconds,
+      'notification': notification.toJson(),
+    };
+  }
+}
+
+/// The ongoing notification shown while the app scans on its own.
+class ScanNotification {
+  const ScanNotification({
+    this.title = 'Finding your location',
+    this.text = 'Scanning for nearby beacons',
+    this.channelName = 'Location scanning',
+    this.iconName,
+  });
+
+  final String title;
+  final String text;
+
+  /// The notification channel's name in the system's notification settings.
+  final String channelName;
+
+  /// A drawable or mipmap in the app, by name (`ic_stat_scan`). Null uses the
+  /// app's launcher icon. Android draws it as a silhouette, so a white
+  /// monochrome drawable reads best.
+  final String? iconName;
+
+  Map<String, dynamic> toJson() => {
+    'title': title,
+    'text': text,
+    'channelName': channelName,
+    if (iconName != null) 'iconName': iconName,
+  };
+}

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'types.dart';
@@ -15,6 +16,9 @@ class IwayplusScanner {
 
   static const MethodChannel _methods = MethodChannel('iwayplus_scanner');
   static const EventChannel _events = EventChannel('iwayplus_scanner/events');
+  static const EventChannel _appEventChannel = EventChannel(
+    'iwayplus_scanner/app_events',
+  );
 
   /// One shared native subscription. Each `receiveBroadcastStream()` call
   /// would re-register the platform listener and replace the previous one, so
@@ -44,6 +48,84 @@ class IwayplusScanner {
     }
   }
 
+  /// Envelopes from the app's own scanning, still JSON-encoded, while the app
+  /// is running to hear them. Empty outside Android.
+  ///
+  /// Separate from [rawEvents], which carries the page's streams: each side
+  /// sees only the streams it started, with its own unbroken sequence.
+  static Stream<String> get appRawEvents => _appRaw;
+
+  /// [appRawEvents], parsed.
+  static Stream<ScannerEnvelope> get appEvents => _appRaw
+      .map(_decode)
+      .where((envelope) => envelope != null)
+      .cast<ScannerEnvelope>();
+
+  static final Stream<String> _appRaw = _isAndroid
+      ? _appEventChannel.receiveBroadcastStream().cast<String>()
+      : const Stream<String>.empty();
+
+  static bool get _isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  /// Chooses whether the app may scan on its own. See [ScanMode].
+  ///
+  /// [ScanMode.persistent] is Android only and throws [UnsupportedError]
+  /// elsewhere; [ScanMode.webOnly] is a no-op there.
+  static Future<void> setMode(ScanMode mode) async {
+    final json = jsonEncode(mode.toJson());
+    if (!_isAndroid) {
+      if (mode is PersistentScanMode) {
+        throw UnsupportedError('Persistent scanning is Android only');
+      }
+      return;
+    }
+    await _methods.invokeMethod<void>('setScanMode', json);
+  }
+
+  /// Starts the app's own scanning of [streams] — [ScannerStream.ble] and/or
+  /// [ScannerStream.gps] — or changes which it runs.
+  ///
+  /// Needs [ScanMode.persistent], location permission, and the service
+  /// declared in the app's manifest (see the README). Call it with the app on
+  /// screen: Android lets the scanning service start only from there. A
+  /// [PlatformException] says what is missing: `WEB_ONLY_MODE`,
+  /// `INVALID_STREAMS`, `SERVICE_NOT_DECLARED`, `PERMISSION_DENIED` or
+  /// `FOREGROUND_NOT_ALLOWED`.
+  ///
+  /// Independent of the page: the page starting or stopping a stream never
+  /// changes the app's, and the reverse.
+  static Future<void> startAppScanning(Iterable<ScannerStream> streams) async {
+    final wanted = streams.toSet();
+    const allowed = {ScannerStream.ble, ScannerStream.gps};
+    if (wanted.isEmpty || !allowed.containsAll(wanted)) {
+      throw ArgumentError.value(
+        streams,
+        'streams',
+        'app scanning runs ble and gps only',
+      );
+    }
+    if (!_isAndroid) {
+      throw UnsupportedError('App scanning is Android only');
+    }
+    await _methods.invokeMethod<void>('startAppScanning', [
+      for (final stream in wanted) stream.name,
+    ]);
+  }
+
+  /// Ends the app's own scanning. Whatever the page is scanning carries on.
+  static Future<void> stopAppScanning() async {
+    if (!_isAndroid) return;
+    await _methods.invokeMethod<void>('stopAppScanning');
+  }
+
+  /// Whether the app's own scanning is on: started, and neither stopped nor
+  /// run out after a swipe. Always false outside Android.
+  static Future<bool> isAppScanning() async {
+    if (!_isAndroid) return false;
+    return await _methods.invokeMethod<bool>('isAppScanning') ?? false;
+  }
+
   /// Safe to call while scanning; the new values take effect immediately.
   static Future<void> configure(ScannerConfig config) =>
       _methods.invokeMethod<void>('configure', jsonEncode(config.toJson()));
@@ -68,7 +150,8 @@ class IwayplusScanner {
       }),
   ]);
 
-  /// Stops every stream and resets the sequence counter.
+  /// Stops every stream this side started, and resets the sequence counter.
+  /// The app's own scanning ([startAppScanning]) is not affected.
   static Future<void> stopAll() => _methods.invokeMethod<void>('stopAll');
 
   /// Speaks with the device's speech engine, replacing anything being spoken.
